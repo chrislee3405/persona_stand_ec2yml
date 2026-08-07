@@ -1,0 +1,28 @@
+services:
+  backend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_backend:latest
+    container_name: persona_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - persona_network
+    restart: unless-stopped
+
+  frontend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_frontend:latest
+    container_name: persona_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=${VITE_API_URL}
+    networks:
+      - persona_network
+    restart: unless-stopped
+
+networks:
+  persona_network:
+    driver: bridge
