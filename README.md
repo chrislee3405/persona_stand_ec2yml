@@ -35,6 +35,13 @@ nano docker-compose.ec2.yml
 # Paste the YAML content, then save: Ctrl+O -> Enter -> Ctrl+X
 ```
 
+**Future yml update — Git pull**
+
+```bash
+cd ~/app
+git pull
+```
+
 ## 2. Create the `.env` file
 
 ```bash
@@ -59,8 +66,7 @@ Save with `Ctrl+O -> Enter -> Ctrl+X`.
 cd ~/app
 
 # 1. Log Docker in to your AWS ECR registry (token valid for 12 hours)
-aws ecr get-login-password --region ap-southeast-2 | \
-  docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com
 
 # 2. Pull the latest backend and frontend images from ECR
 docker compose -f docker-compose.ec2.yml pull
