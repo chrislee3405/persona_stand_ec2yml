@@ -1,6 +1,3 @@
-# persona_stand_ec2yml
-For ec2 to pull image from ECR
-
 # Deploying to EC2 with Docker Compose
 
 This guide walks through deploying the app to an EC2 instance using `docker-compose.ec2.yml` and images stored in AWS ECR.
@@ -42,7 +39,7 @@ cd ~/app
 git pull
 ```
 
-## 2. Create the `.env` file
+## 2. Create the `.env` file (Same way as update)
 
 ```bash
 cd ~/app
