@@ -6,6 +6,11 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=${DATABASE_URL}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-wif-config.json
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+    volumes:
+      - ~/secrets/gcp-wif-config.json:/app/secrets/gcp-wif-config.json:ro
     networks:
       - persona_network
     restart: unless-stopped
