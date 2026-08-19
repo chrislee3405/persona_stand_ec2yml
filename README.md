@@ -200,6 +200,7 @@ The third repository does not build the application images. It provides the EC2 
 
 The list showing the overall menu of the setup guildence and onging development procedures
 
+```text
 Part 0 - Local Machine Prerequisites—
     ├── 0.1 Git Setup 
     ├── 0.2 Python Setup 
@@ -228,6 +229,7 @@ Part C — Deployment & Ongoing Operations
     ├── C.2 Every Redeploy
     ├── C.3 After EC2 Stop/Start 
     └── C.4 Troubleshooting Reference
+```
 
 ---
 

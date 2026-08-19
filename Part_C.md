@@ -22,7 +22,7 @@ Save with `Ctrl+O → Enter → Ctrl+X`.
 
 Run in EC2 instance terminal
 ```bash
-aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com # for every 12 hours restart
 docker compose -f docker-compose.ec2.yml pull
 docker compose -f docker-compose.ec2.yml up -d
 ```

@@ -3,6 +3,17 @@ x is the major version
 y is the progressing updated functions
 z is the minor bug fix
 ---
+# version 0.2.0
+
+- 
+
+---
+# version 0.1.1
+
+- change authentication to cookie session signature
+    - prevent conversation id tempering attack
+
+---
 # version 0.1.0
 
 - Fundemential Architecture Estbulished(Github, Github Action, EC2, ECR, RDS, GCP etc.)
