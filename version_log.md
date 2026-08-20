@@ -5,7 +5,15 @@ z is the minor bug fix
 ---
 # version 0.2.0
 
-- 
+- model orchestration
+    - workflow to gather material for natural language generation
+        - categorize topic of the user message
+        - retrieve reference document of that topic
+        - BM25 algorithm to retrieve similiar past Q&A pair as reference
+        - fetch summary and few recent message after summary
+- summerization
+    - a running summary is add in db conversation table
+    - update a running summary every x turns of conversation
 
 ---
 # version 0.1.1
