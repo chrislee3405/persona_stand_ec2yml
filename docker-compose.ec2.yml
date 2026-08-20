@@ -9,6 +9,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-wif-config.json
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
     volumes:
       - ~/secrets/gcp-wif-config.json:/app/secrets/gcp-wif-config.json:ro
     networks:

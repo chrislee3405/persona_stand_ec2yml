@@ -35,6 +35,7 @@ docker compose -f docker-compose.ec2.yml logs -f
 The app should be reachable at `http://<ec2-public-ip>` — **Where: your local machine's browser**.
 
 ## C.2 Every Redeploy
+# main steps: have update images in ECR > connect to EC2 terminal > go to app folder > update .env > login with CLI "aws ecr get-..." > pull images > docker up
 
 Run in EC2 instance terminal
 ```bash
@@ -68,3 +69,4 @@ docker ps -a
 | `403 PERMISSION_DENIED: iam.serviceAccounts.getAccessToken` despite roles being granted in console | The AWS role ARN in the GCP IAM binding doesn't match the EC2 instance's *actual* attached role — verify via instance metadata (EC2 via SSH), not by typing/guessing |
 | Can't load app in browser | Security group isn't allowing inbound traffic on the app's port — check in **AWS Console (browser)** |
 | Accidentally ran the wrong `docker-compose.yml` on EC2 | `docker system prune -f` **— Where: EC2 instance (via SSH)**, then redeploy correctly |
+| EC2 container status unhealthy | rum "docker compose -f docker-compose.ec2.yml logs --tail=100 backend" to inspect the debut log|
