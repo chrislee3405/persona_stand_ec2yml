@@ -2,6 +2,21 @@ For version format x.y.z
 x is the major version
 y is the progressing updated functions
 z is the minor bug fix
+
+---
+# version 0.3.0
+
+- prompt construction architecture
+    - system prompt
+        - unchange status information orientated
+    - user prompt
+        - dynamic and situtional information orientated
+- improve workflow of logging error model message
+    - log error model message in message table
+    - isolate error model message from functional feature
+- change behaviour of unanthentication conversation id and invite code
+    - treat as starting a new conversation instead of failure loop
+
 ---
 # version 0.2.0
 

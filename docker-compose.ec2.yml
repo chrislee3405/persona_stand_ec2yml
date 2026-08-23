@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:latest
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-main}
     container_name: persona_backend
     ports:
       - "8000:8000"
@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:latest
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-main}
     container_name: persona_frontend
     ports:
       - "80:80"

@@ -15,8 +15,11 @@ VITE_API_URL=http://<ec2-public-ip>:8000
 DATABASE_URL=postgresql://<master-username>:<master-password>@<rds-endpoint>:5432/<db-name>
 GCP_PROJECT_ID=<project-id-or-number-matching-what-your-code-expects>
 AWS_REGION=ap-southeast-2
+IMAGE_TAG=main
 ```
 Save with `Ctrl+O → Enter → Ctrl+X`.
+
+⚠️ `IMAGE_TAG` selects which branch's image this instance pulls from ECR — both the backend and frontend workflows now push a `main` tag and a `trial` tag (in addition to the per-commit SHA tag) instead of `latest`. Set it to `main` on your production instance and `trial` on a trial/staging instance. If omitted, `docker-compose.ec2.yml` defaults to `main`.
 
 ⚠️ `DATABASE_URL` here must point **directly at the RDS endpoint on port 5432** — not the local tunnel form from B.2. Omitting this variable entirely causes an immediate startup crash.
 
@@ -59,7 +62,7 @@ docker ps -a
 | Symptom | Likely cause |
 |---|---|
 | `docker login` fails | ECR region mismatch, expired/missing AWS credentials, or missing IAM permissions |
-| `pull` fails with "not found" | Image tag doesn't exist in ECR, or wrong `AWS_ACCOUNT_ID` in `.env` |
+| `pull` fails with "not found" | Image tag doesn't exist in ECR, wrong `AWS_ACCOUNT_ID` in `.env`, or `IMAGE_TAG` in `.env` doesn't match a branch that's actually been pushed (`main`/`trial`) |
 | Frontend can't reach backend | `VITE_API_URL` is stale after an instance restart |
 | Backend container unhealthy, `curl: not found` in health log | Base image lacks `curl` — install it in the Dockerfile's runtime stage (edited on **local machine**, rebuilt via GitHub Actions), or switch the health check to `wget` |
 | Frontend unhealthy, `wget: can't connect... Connection refused` on `localhost` but not `127.0.0.1` | IPv6 `localhost` resolution — nginx only listens on IPv4; point the health check at `127.0.0.1`, or add `listen [::]:80;` (edited in `nginx.conf` on **local machine**) |
@@ -69,4 +72,4 @@ docker ps -a
 | `403 PERMISSION_DENIED: iam.serviceAccounts.getAccessToken` despite roles being granted in console | The AWS role ARN in the GCP IAM binding doesn't match the EC2 instance's *actual* attached role — verify via instance metadata (EC2 via SSH), not by typing/guessing |
 | Can't load app in browser | Security group isn't allowing inbound traffic on the app's port — check in **AWS Console (browser)** |
 | Accidentally ran the wrong `docker-compose.yml` on EC2 | `docker system prune -f` **— Where: EC2 instance (via SSH)**, then redeploy correctly |
-| EC2 container status unhealthy | rum "docker compose -f docker-compose.ec2.yml logs --tail=100 backend" to inspect the debut log|
+| EC2 container status unhealthy & Inspect EC2 debug print | run "docker compose -f docker-compose.ec2.yml logs --tail=100 backend" to inspect the debut log|
