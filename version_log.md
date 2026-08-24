@@ -1,10 +1,10 @@
 For version format x.y.z
 x is the major version
-y is the progressing updated functions
-z is the minor bug fix
+y is the major function update
+z is the minor bug fix or minor function update(toward the major function update)
 
 ---
-# version 0.3.0
+# version 0.2.1
 
 - prompt construction architecture
     - system prompt
