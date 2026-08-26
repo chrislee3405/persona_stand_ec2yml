@@ -1,7 +1,24 @@
-For version format x.y.z
-x is the major version
-y is the major function update
-z is the minor bug fix or minor function update(toward the major function update)
+
+---
+# version 0.2.3
+
+- improve BM25 workflow
+    - new table to store computed corpus
+    - put corpus in cache memory at the beginning
+
+---
+# version 0.2.2
+
+- check gate
+    - check AI response consistency before sending back
+    - few turns retry
+        - minor retry with original response and reject reason only
+        - major retry with complete background and reject reason
+    - log retry attempt message in message table
+        - sender: regen
+- response parser
+    - parse paragraph into sentence list
+    - frontend delay response display for mimic human typing
 
 ---
 # version 0.2.1
@@ -13,6 +30,7 @@ z is the minor bug fix or minor function update(toward the major function update
         - dynamic and situtional information orientated
 - improve workflow of logging error model message
     - log error model message in message table
+        - sender: error
     - isolate error model message from functional feature
 - change behaviour of unanthentication conversation id and invite code
     - treat as starting a new conversation instead of failure loop
@@ -49,4 +67,9 @@ z is the minor bug fix or minor function update(toward the major function update
     - UX functionality
         - sustain conversation and inputed invite code after switching tab
 
+---
+# version format x.y.z
+- x is the major version
+- y is the major function update
+- z is the minor bug fix or minor function update(toward the major function update)
 ---
