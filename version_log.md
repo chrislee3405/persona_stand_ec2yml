@@ -10,7 +10,7 @@
 - change behaviour of unanthentication conversation id and invite code
       
 ---
-# version 0.2.3 (0.3.0)
+# version 0.2.3
 
 - improve BM25 workflow
     - new table to store computed corpus
