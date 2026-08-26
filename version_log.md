@@ -1,6 +1,6 @@
 
 ---
-# version 0.2.3
+# version 0.2.3 (0.3.0)
 
 - improve BM25 workflow
     - new table to store computed corpus
