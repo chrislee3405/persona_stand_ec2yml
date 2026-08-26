@@ -1,5 +1,15 @@
 
 ---
+# version 0.3.0 (all updates from 0.2.1 to 0.2.3)
+
+- improve BM25 workflow
+- check gate
+- response parser
+- prompt construction architecture
+- improve workflow of logging error model message
+- change behaviour of unanthentication conversation id and invite code
+      
+---
 # version 0.2.3 (0.3.0)
 
 - improve BM25 workflow
