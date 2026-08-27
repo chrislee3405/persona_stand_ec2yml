@@ -1,5 +1,32 @@
 
 ---
+# version 0.3.1
+
+- user consent function for data collection
+    - consent popup window
+        - pull agreement condition from database
+    - consent record
+    - consent blocker for message handling
+        - both backend and frontend
+- privacy gate
+    - block privay containing message before entering database and third party LLM
+        - spacy nlp engine
+- Rate control
+    - cap of 3 in-flight messages per session
+    - cap of 5 concurrent session per IP
+- Message length gate
+
+---
+# version 0.3.0 (all updates from 0.2.1 to 0.2.3)
+
+- improve BM25 workflow
+- check gate
+- response parser
+- prompt construction architecture
+- improve workflow of logging error model message
+- change behaviour of unanthentication conversation id and invite code
+
+---
 # version 0.2.3
 
 - improve BM25 workflow
