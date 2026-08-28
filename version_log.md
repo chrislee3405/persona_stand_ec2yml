@@ -1,5 +1,16 @@
 
 ---
+# version 0.3.2
+
+- differentiate capacity of different user tier
+    - rate control
+    - regenerate appempt
+- consent acceptance criteria
+    - compulsory consent terms in consent http request 
+- fix bug of 2 close messages
+    - add a linked list chain of messages in frontend
+
+---
 # version 0.3.1
 
 - user consent function for data collection
