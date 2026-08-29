@@ -1,5 +1,13 @@
 
 ---
+# version 0.3.3
+
+- Combine fragment messages before sending to backend
+    - frontend logic
+    - typing detect
+- split bukly chatroom code 
+
+---
 # version 0.3.2
 
 - differentiate capacity of different user tier
