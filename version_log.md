@@ -1,5 +1,18 @@
 
 ---
+# version 0.4.0 (all updates from 0.3.1 to 0.3.3)
+
+- user consent function for data collection
+- privacy gate
+- Rate control
+- Message length gate
+- differentiate capacity of different user tier
+- consent acceptance criteria
+- Combine fragment messages before sending to backend
+- split bukly chatroom code 
+- fix bug of 2 close messages
+
+---
 # version 0.3.3
 
 - Combine fragment messages before sending to backend

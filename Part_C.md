@@ -44,6 +44,7 @@ Run in EC2 instance terminal
 ```bash
 cd ~/app
 git pull
+# login with CLI "aws ecr get-..."
 docker compose -f docker-compose.ec2.yml pull
 docker compose -f docker-compose.ec2.yml up -d
 docker ps -a
