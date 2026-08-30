@@ -17,14 +17,15 @@ services:
     restart: unless-stopped
 
   frontend:
+    # Prebuilt in CI and pushed to ECR (same as backend). The CloudFront
+    # base URL is hardcoded in the frontend source (src/lib/assetUrl.ts),
+    # so there is nothing to configure here.
     image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-main}
     container_name: persona_frontend
     ports:
       - "80:80"
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=${VITE_API_URL}
     networks:
       - persona_network
     restart: unless-stopped

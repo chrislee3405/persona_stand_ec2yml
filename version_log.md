@@ -1,5 +1,17 @@
 
 ---
+# version 0.4.1
+
+- estabulish database to store static content
+- estabulish S3 and CloudFront for owner image and other resources
+- improve UI
+    - combine about me, qualification and journey into one page
+    - sustain nav bar on top
+    - follow user scroll to highlight button in nav bar
+- fix bug
+    - incorrect highlighting in nav bar
+
+---
 # version 0.4.0 (all updates from 0.3.1 to 0.3.3)
 
 - user consent function for data collection

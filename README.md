@@ -229,6 +229,14 @@ Part C — Deployment & Ongoing Operations
     ├── C.2 Every Redeploy
     ├── C.3 After EC2 Stop/Start 
     └── C.4 Troubleshooting Reference
+
+Part D — Site Content & Images 
+    ├── D.1 First-Time Setup — S3 + CloudFront
+    ├── D.2 First-Time Setup — Content Table
+    ├── D.3 Every Content Update
+    ├── D.4 Every Image Update
+    ├── D.5 Content Shapes Reference
+    └── D.6 Troubleshooting Reference
 ```
 
 ---

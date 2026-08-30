@@ -47,3 +47,14 @@
 
 # <you> - GitHub username/org
  - Your own GitHub username or organization, as it appears in each repo's URL on GitHub
+
+# <bucket-name> - S3 bucket holding the site's images
+ - The name you chose creating it (Part D.1) — AWS Console → S3 → Buckets
+ - Globally unique; keep it in the same region as the rest of the stack (ap-southeast-2)
+
+# <cloudfront-domain> - CloudFront distribution domain that serves the images
+ - AWS Console → CloudFront → Distributions → your distribution → "Distribution domain name" (e.g. d5ydhntfck9s8.cloudfront.net)
+ - Also hardcoded in persona_stand_frontend/src/lib/assetUrl.ts — the two must match
+
+# <db-name> / <master-username> / <master-password> / <rds-endpoint>
+ - Same values as Part A.4 / B.2 — reused in Part D to connect with psql over the SSH tunnel
