@@ -13,13 +13,15 @@ Browser
    │
    │ GET /api/site-content
    ▼
-FastAPI ──► RDS  (site_content table, one JSONB row per section version)
+FastAPI ──► RDS  (site_content: one JSONB row per section version)
+        └─► RDS  (site_image:   one row per image-slot version)
    │
-   │ returns { "content": { "personal_statement": {...}, "journey": [...], ... } }
+   │ returns { "content": { "personal_statement": {...}, "journey": [...], ... },
+   │           "images":  { "personal_statement": [ {"description":"hero","path":"about/hero.jpg"} ], ... } }
    ▼
 Frontend renders the page
    │
-   │ for each image key in the content (e.g. "about/hero.jpg")
+   │ for each image path (e.g. "about/hero.jpg")
    ▼
 <img src = "<cloudfront-domain>/about/hero.jpg">
                      │
@@ -28,8 +30,8 @@ Frontend renders the page
 ```
 
 - **Text** — the frontend calls `GET /api/site-content` on page load and renders whatever it gets. Changing text is a database-only operation; **no redeploy**.
-- **Images** — the database stores only the object **key** (e.g. `about/hero.jpg`), never a full URL and never the image itself. The frontend prepends the CloudFront base URL, which is hardcoded once in `persona_stand_frontend/src/lib/assetUrl.ts`.
-- **Versioning** — you never `UPDATE` a `site_content` row. To change a section you `INSERT` a new row with the same `section` value; the row with the newest `created_at` wins, and the old rows stay as history.
+- **Images** — text and images are stored **separately**: text in `site_content`, images in `site_image`. `site_image` stores only the object **key** (e.g. `about/hero.jpg`), never a full URL and never the image itself. The frontend prepends the CloudFront base URL, which is hardcoded once in `persona_stand_frontend/src/lib/assetUrl.ts`.
+- **Versioning** — you never `UPDATE` a `site_content` or `site_image` row. To change something you `INSERT` a new row (same `section` for text, same `section` + `description` for an image); the newest `created_at` wins, and the old rows stay as history.
 
 ---
 
@@ -81,18 +83,28 @@ Commit and push. The frontend GitHub Actions workflow builds a new image and pus
 
 ## D.2 First-Time Setup — Content Table
 
-### The table creates itself
+### The tables create themselves
 
-The backend calls `Base.metadata.create_all(...)` on startup, so the `site_content` table is created automatically the first time the backend container runs against the database. **No migration or manual `CREATE TABLE` is needed.**
+The backend calls `Base.metadata.create_all(...)` on startup, so the `site_content` **and** `site_image` tables are created automatically the first time the backend container runs against the database. **No migration or manual `CREATE TABLE` is needed.**
 
-Column shape (for reference):
+`site_content` — the page **text**, one JSONB row per section version:
 
 | column | type | notes |
 |---|---|---|
 | `id` | `serial` PK | auto |
-| `section` | `text` | slug the frontend expects: `personal_statement`, `qualifications`, `journey`, `contact` |
+| `section` | `text` | slug the frontend expects: `personal_statement`, `qualifications`, `certifications`, `journey`, `contact` |
 | `content` | `jsonb` | shape depends on the section — see **D.5** |
 | `created_at` | `timestamptz` | defaults to `now()`; newest row per `section` wins |
+
+`site_image` — the page **images**, one row per version of each image slot. Text and images are separate now: a section's picture is not a key inside its JSON, it is a `site_image` row.
+
+| column | type | notes |
+|---|---|---|
+| `id` | `serial` PK | auto |
+| `section` | `text` | which section the image belongs to — same slug set as above |
+| `description` | `text` | slot label within the section (e.g. `hero`), also used as the `<img alt>`. `(section, description)` identifies one slot |
+| `image_path` | `text` | S3 object **key** only, e.g. `about_me/main_img.png` — never a URL, never bytes |
+| `created_at` | `timestamptz` | defaults to `now()`; newest row per `(section, description)` wins |
 
 ### Connect to the database
 
@@ -114,23 +126,23 @@ Paste into the `psql` prompt. Fill every `<...>`. `$j$ ... $j$` is dollar-quotin
 
 ```sql
 -- 1. personal_statement  → About-Me / main page.  shape: OBJECT
+--    (no image key here — the hero picture is a site_image row, seeded below)
 INSERT INTO site_content (section, content) VALUES (
   'personal_statement',
   $j${
     "heading": "<short heading, e.g. About Me>",
     "body": "<1-3 sentence bio paragraph>",
-    "cta": { "label": "<button text>", "href": "/chatroom" },
-    "heroImage": "<S3 object key, e.g. about/hero.jpg — or omit this line for no image>"
+    "cta": { "label": "<button text>", "href": "/chatroom" }
   }$j$::jsonb
 );
 
--- 2. qualifications  → Qualifications page.  shape: ARRAY (array order = display order)
+-- 2. qualifications  → Qualifications & Awards section.  shape: ARRAY (array order = display order; degrees first, then awards)
 INSERT INTO site_content (section, content) VALUES (
   'qualifications',
   $j$[
     {
       "id": "<slug, e.g. mit-qut>",
-      "title": "<qualification, e.g. Master of Information Technology>",
+      "title": "<qualification or award, e.g. Master of Information Technology>",
       "institution": "<e.g. Queensland University of Technology>",
       "year": "<e.g. 2024>",
       "detail": "<optional extra line — or omit>"
@@ -138,7 +150,21 @@ INSERT INTO site_content (section, content) VALUES (
   ]$j$::jsonb
 );
 
--- 3. journey  → Journey page.  shape: ARRAY of blocks (array order = top-to-bottom order)
+-- 3. certifications  → Certifications section.  shape: ARRAY (array order = display order)
+INSERT INTO site_content (section, content) VALUES (
+  'certifications',
+  $j$[
+    {
+      "id": "<slug, e.g. ielts-band-7>",
+      "title": "<certification, e.g. IELTS Academic – Band 7>",
+      "issuer": "<awarding body / exam board — or omit>",
+      "year": "<e.g. 2023 — or omit>",
+      "detail": "<optional extra line — or omit>"
+    }
+  ]$j$::jsonb
+);
+
+-- 4. journey  → Journey page.  shape: ARRAY of blocks (array order = top-to-bottom order)
 INSERT INTO site_content (section, content) VALUES (
   'journey',
   $j$[
@@ -147,7 +173,7 @@ INSERT INTO site_content (section, content) VALUES (
   ]$j$::jsonb
 );
 
--- 4. contact  → Contact page + the footer social icons.  shape: OBJECT
+-- 5. contact  → Contact page + the footer social icons.  shape: OBJECT
 INSERT INTO site_content (section, content) VALUES (
   'contact',
   $j${
@@ -164,15 +190,44 @@ INSERT INTO site_content (section, content) VALUES (
 
 ⚠️ The footer's LinkedIn/GitHub icons are picked out of `contact.links` by matching the **label** (case-insensitive, must contain the word `linkedin` / `github`). Keep those labels.
 
+### Seed the images
+
+Separate table, one row per image slot. The frontend reads slot `hero` for the About-Me picture; add more slots (any `description`) as sections start using images. Upload the file to S3 first (**D.4**).
+
+```sql
+-- About-Me hero picture. section + description identify the slot;
+-- image_path is the S3 object KEY only.
+INSERT INTO site_image (section, description, image_path) VALUES (
+  'personal_statement', 'hero', '<S3 object key, e.g. about_me/main_img.png>'
+);
+```
+
 ### Verify
 
 ```sql
 SELECT DISTINCT ON (section) section, content, created_at
 FROM site_content
 ORDER BY section, created_at DESC, id DESC;
+
+SELECT DISTINCT ON (section, description) section, description, image_path, created_at
+FROM site_image
+ORDER BY section, description, created_at DESC, id DESC;
 ```
 
-Then open `http://<ec2-public-ip>` in a browser — the pages should show your text.
+Then open `http://<ec2-public-ip>` in a browser — the pages should show your text and images.
+
+### Migrating an existing environment
+
+If this database already had a `personal_statement` row with a `heroImage` key (the old inline format), copy that key into the new table once. The old key stays put and keeps working as a fallback, so this is safe to run and safe to skip.
+
+```sql
+INSERT INTO site_image (section, description, image_path)
+SELECT 'personal_statement', 'hero', content->>'heroImage'
+FROM site_content
+WHERE section = 'personal_statement' AND content ? 'heroImage'
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+```
 
 ---
 
@@ -213,7 +268,7 @@ Then open `http://<ec2-public-ip>` in a browser — the pages should show your t
 - The object **key** is the folder + filename, e.g. `about/hero.jpg`.
 
 ⚠️ **Replacing an image:** because of the long cache, either
-- upload under a **new versioned filename** (`about/hero-v2.jpg`) and point the content row at the new key (preferred), **or**
+- upload under a **new versioned filename** (`about/hero-v2.jpg`) and point the `site_image` slot at the new key (preferred), **or**
 - keep the same key and create a CloudFront invalidation: **CloudFront Console → your distribution → Invalidations → Create invalidation → object paths: `/about/hero.jpg`** (or `/*`).
 
 CLI alternative (run in **AWS CloudShell**, browser):
@@ -230,19 +285,14 @@ https://<cloudfront-domain>/about/hero.jpg
 ```
 This must show the image. If it shows an **AccessDenied** XML, see **D.6**.
 
-### 3. Put the key in the content
+### 3. Put the key in `site_image`
 
-The image is only shown once a `site_content` row references its key. Open `psql` (D.2) and `INSERT` a new row for the section that uses it:
+The image is only shown once a `site_image` row points a slot at its key. Open `psql` (D.2) and `INSERT` a **new** row for the `(section, description)` slot — never `UPDATE`; the newest row per slot wins, older rows stay as history:
 
 ```sql
--- Point the About-Me hero at the uploaded key
-INSERT INTO site_content (section, content)
-SELECT 'personal_statement',
-       jsonb_set(content, '{heroImage}', '"about/hero.jpg"')
-FROM site_content
-WHERE section = 'personal_statement'
-ORDER BY created_at DESC, id DESC
-LIMIT 1;
+-- Point the About-Me hero slot at the uploaded key
+INSERT INTO site_image (section, description, image_path)
+VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 ```
 
 4. Reload the browser. No redeploy.
@@ -251,17 +301,35 @@ LIMIT 1;
 
 ## D.5 Content Shapes Reference
 
+### `site_content` (text)
+
 | `section` | JSON type | Fields | Shown on |
 |---|---|---|---|
-| `personal_statement` | object | `body` (req), `heading`, `cta:{label,href}`, `heroImage` (S3 key) | About-Me / main page |
-| `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | Qualifications page |
+| `personal_statement` | object | `body` (req), `heading`, `cta:{label,href}` | About-Me / main page |
+| `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | Qualifications & Awards section |
+| `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | Certifications section |
 | `journey` | array | per block: `id`,`year`,`title`,`body` (all req); array order = page order | Journey page |
 | `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact page + footer icons |
 
+### `site_image` (pictures)
+
+| column | Meaning |
+|---|---|
+| `section` | which section the image belongs to — same slug set as above |
+| `description` | slot label within the section + `<img alt>` text; `(section, description)` = one slot |
+| `image_path` | S3 object **key** only, e.g. `about_me/main_img.png` |
+
+Known slots the frontend reads today:
+
+| `section` | `description` | Used for |
+|---|---|---|
+| `personal_statement` | `hero` | the About-Me portrait |
+
 Rules:
 - `section` is a fixed slug — the frontend looks for these exact strings.
-- Image fields (`heroImage`, and any future `media`) hold the **S3 key only**, e.g. `about/hero.jpg` — never a full URL.
-- Optional fields can be omitted entirely rather than set to `null`.
+- `image_path` holds the **S3 key only**, e.g. `about/hero.jpg` — never a full URL, never the bytes.
+- Optional `site_content` fields can be omitted entirely rather than set to `null`.
+- Legacy: old `personal_statement` rows may still carry a `heroImage` key; the frontend uses it only as a fallback when no `site_image` `hero` slot exists.
 
 ---
 
@@ -274,9 +342,10 @@ Rules:
 | Page text is blank / shows "No … content yet." | No row for that `section`, or the newest row's JSON is the wrong shape — check with the D.2 verify query |
 | Edited the DB but the page didn't change | Used `UPDATE` on an old row — its `created_at` didn't move, so a different row is still newest. Always `INSERT` a new row |
 | `<img>` renders but is broken; `src` starts with `/` and has no host | `CDN_BASE` empty — the frontend image was built before `assetUrl.ts` had `<cloudfront-domain>`; fix the line and redeploy the frontend (Part C.2) |
-| `<img>` `src` looks doubled (`https://…cloudfront.net/https://…`) | The full URL was stored in the content instead of the bare key — store `about/hero.jpg`, not the CloudFront URL |
+| `<img>` `src` looks doubled (`https://…cloudfront.net/https://…`) | The full URL was stored in `site_image.image_path` instead of the bare key — store `about/hero.jpg`, not the CloudFront URL |
 | Opening the image URL shows `AccessDenied` XML | Hitting the **S3** URL directly (expected — use the `<cloudfront-domain>` URL), or the CloudFront bucket policy / OAC step (D.1 step 7) wasn't completed |
-| Image URL 404s on CloudFront | Key mismatch — the S3 object key must exactly equal the string in the content JSON (folder, case, extension) |
+| Image URL 404s on CloudFront | Key mismatch — the S3 object key must exactly equal `site_image.image_path` (folder, case, extension) |
+| Hero image missing though `site_content` is fine | No `site_image` row for `(section='personal_statement', description='hero')` — seed it (D.2) or run the D.4 step 3 insert |
 | Replaced an image, same key, still see the old one | CloudFront cache — create an invalidation, or use a new versioned filename (D.4) |
 | `GET /api/site-content` returns `{"content": {}}` | `site_content` table is empty — seed it (D.2) |
 | `GET /api/site-content` 404 / 500 | Backend not running or can't reach RDS — see Part C.4 |

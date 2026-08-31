@@ -1,5 +1,11 @@
 
 ---
+# version 0.4.2
+
+- faster preload of first image
+- minor UI improvement
+
+---
 # version 0.4.1
 
 - estabulish database to store static content
