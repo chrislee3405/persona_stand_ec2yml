@@ -1,5 +1,13 @@
 
 ---
+# version 0.4.3
+
+- project thumbnial banner
+- journey object image
+- clickable journey object in popup window
+- minor UI improvement
+
+---
 # version 0.4.2
 
 - faster preload of first image
