@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-main}
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-trial}
     container_name: persona_backend
     ports:
       - "8000:8000"
@@ -20,7 +20,7 @@ services:
     # Prebuilt in CI and pushed to ECR (same as backend). The CloudFront
     # base URL is hardcoded in the frontend source (src/lib/assetUrl.ts),
     # so there is nothing to configure here.
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-main}
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-trial}
     container_name: persona_frontend
     ports:
       - "80:80"
