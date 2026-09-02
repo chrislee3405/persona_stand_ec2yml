@@ -1,5 +1,28 @@
 
 ---
+# version 0.5.0 (all updates from 0.4.1 to 0.4.4)
+
+- database to store static content
+- S3 and CloudFront for owner image and other resources
+- Certifications section
+- journey section
+    - journey image
+    - detail popup window
+- project section
+    - thumbnial banner
+    - detail popup window
+    - auto video (one video play at a time)
+- UX improvement
+    - preload first hero image
+    - preload first video for all projects
+    - "poster_tag" for initial one frame
+- UI improvement
+- bug fix
+- clean code
+    - exclusive knob file for adjustment
+
+
+---
 # version 0.4.4
 
 - project detail popup window
