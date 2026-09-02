@@ -14,12 +14,14 @@ Browser
    │ GET /api/site-content
    ▼
 FastAPI ──► RDS  (site_content: one JSONB row per section version)
-        ├─► RDS  (site_image:   one row per image-slot version)
-        └─► RDS  (site_journey: one JSONB row per journey-block detail version)
+        ├─► RDS  (site_image:   one row per media-slot version -- images AND .mp4 keys)
+        ├─► RDS  (site_journey: one JSONB row per journey-block detail version)
+        └─► RDS  (site_project: one JSONB row per project detail version)
    │
    │ returns { "content": { "personal_statement": {...}, "journey": [...], ... },
    │           "images":  { "personal_statement": [ {"description":"hero","path":"about/hero.jpg"} ], ... },
-   │           "journeyDetails": { "2024-master-ai": { "body": "...", ... }, ... } }
+   │           "journeyDetails": { "2024-master-ai": { "body": "...", ... }, ... },
+   │           "projectDetails": { "ransom-simulator": { "overview": "...", "videos": [...], ... }, ... } }
    ▼
 Frontend renders the page
    │
@@ -87,7 +89,7 @@ Commit and push. The frontend GitHub Actions workflow builds a new image and pus
 
 ### The tables create themselves
 
-The backend calls `Base.metadata.create_all(...)` on startup, so the `site_content`, `site_image` **and** `site_journey` tables are created automatically the first time the backend container runs against the database. **No migration or manual `CREATE TABLE` is needed.**
+The backend calls `Base.metadata.create_all(...)` on startup, so the `site_content`, `site_image`, `site_journey` **and** `site_project` tables are created automatically the first time the backend container runs against the database. **No migration or manual `CREATE TABLE` is needed.**
 
 `site_content` — the page **text**, one JSONB row per section version:
 
@@ -118,6 +120,17 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 | `created_at` | `timestamptz` | defaults to `now()`; newest row per `journey_id` wins |
 
 A journey block with **no** `site_journey` row simply has a non-clickable card — the detail sheet is optional per block.
+
+`site_project` — the **detail** behind a Projects thumbnail, shown in a bottom pop-up when it is clicked (a sticky write-up on the left, feature-demo videos on the right). The thumbnail/label comes from the `projects` row in `site_content`; this table is the pop-up content, one JSONB row per version.
+
+| column | type | notes |
+|---|---|---|
+| `id` | `serial` PK | auto |
+| `project_id` | `text` | the `id` of the item in the `site_content` `projects` array this detail belongs to, e.g. `ransom-simulator`. Not a DB foreign key — keep the two in sync by hand |
+| `content` | `jsonb` | `overview`, `features:[…]`, `technologies:[…]`, `githubUrl`, `demoUrl`, `videos:[{src_tag,poster_tag,caption}]` — see **D.5**. No media path here — `src_tag` / `poster_tag` name `site_image` rows |
+| `created_at` | `timestamptz` | defaults to `now()`; newest row per `project_id` wins |
+
+A project with **no** `site_project` row simply has a non-clickable thumbnail — the pop-up is optional per project.
 
 ### Connect to the database
 
@@ -177,12 +190,11 @@ INSERT INTO site_content (section, content) VALUES (
   ]$j$::jsonb
 );
 
--- 4. projects  → Projects banner (between Certifications and Journey) AND
---    the navbar "Projects" dropdown.  shape: ARRAY (array order = left-to-
---    right in the scroller / top-to-bottom in the dropdown).
---    `id` is BOTH the key and the route slug: the thumbnail and the dropdown
---    link to /projects/<id>, so it must match a project page route
---    (persona-stand, ransom-simulator, ...).
+-- 4. projects  → Projects banner (between Certifications and Journey).
+--    shape: ARRAY (array order = left-to-right in the scroller).
+--    `id` is the key AND the site_project.project_id that holds this
+--    project's pop-up detail (seeded further below). Clicking a thumbnail
+--    opens that pop-up; a project with no site_project row is not clickable.
 --    No image path here: `image_tag` names a site_image row (section
 --    "projects", description == image_tag, or `id` when omitted) and the
 --    thumbnail URL is built from that row's image_path — seeded under
@@ -246,6 +258,28 @@ INSERT INTO site_journey (journey_id, content) VALUES (
 );
 ```
 
+### Seed the project detail sheets
+
+Optional, one row per project that should open a pop-up when its thumbnail is clicked. `project_id` must equal the `id` in the `projects` array above. Every field is optional. `overview` blank lines become paragraphs. `videos` are feature-demo clips shown on the right, one playing at a time as the viewer scrolls; `src_tag` / `poster_tag` name **`site_image`** rows (`section` = `projects`) whose `image_path` is the `.mp4` / `.jpg` S3 key — seed those under *Seed the images*.
+
+```sql
+INSERT INTO site_project (project_id, content) VALUES (
+  '<project id, e.g. ransom-simulator>',
+  $j${
+    "overview": "<what it is.\n\nBlank lines split paragraphs.>",
+    "features": ["<main feature>", "<main feature>"],
+    "technologies": ["<e.g. FastAPI>", "<e.g. React>"],
+    "githubUrl": "<https://github.com/…>",
+    "demoUrl": "<https://… — or omit>",
+    "videos": [
+      { "src_tag": "<site_image description for the .mp4>",
+        "poster_tag": "<site_image description for a .jpg still — or omit>",
+        "caption": "<line under the clip — or omit>" }
+    ]
+  }$j$::jsonb
+);
+```
+
 ### Seed the images
 
 Separate table, one row per image slot. The frontend reads slot `hero` for the About-Me picture; add more slots (any `description`) as sections start using images. Upload the file to S3 first (**D.4**).
@@ -263,6 +297,13 @@ INSERT INTO site_image (section, description, image_path) VALUES (
 INSERT INTO site_image (section, description, image_path) VALUES
   ('projects', 'persona-stand', '<S3 key, e.g. projects/persona_stand_thumbnail.jpg>'),
   ('projects', 'ransom-sim',    '<S3 key, e.g. projects/ransom_sim_thumbnail.jpg>');
+
+-- Project pop-up demo clips + posters. site_image also holds .mp4 keys.
+-- `description` MUST equal the `src_tag` / `poster_tag` in the site_project
+-- `videos` array. image_path is the S3 KEY (.mp4 or .jpg).
+INSERT INTO site_image (section, description, image_path) VALUES
+  ('projects', 'ransom-negotiation',        '<S3 key, e.g. projects/ransom/negotiation.mp4>'),
+  ('projects', 'ransom-negotiation-poster', '<S3 key, e.g. projects/ransom/negotiation_poster.jpg>');
 ```
 
 ### Verify
@@ -279,13 +320,17 @@ ORDER BY section, description, created_at DESC, id DESC;
 SELECT DISTINCT ON (journey_id) journey_id, content, created_at
 FROM site_journey
 ORDER BY journey_id, created_at DESC, id DESC;
+
+SELECT DISTINCT ON (project_id) project_id, content, created_at
+FROM site_project
+ORDER BY project_id, created_at DESC, id DESC;
 ```
 
 Then open `http://<ec2-public-ip>` in a browser — the pages should show your text and images.
 
 ### Migrating an existing environment
 
-Every image the site shows now comes **only** from `site_image` — nothing reads an image path out of `site_content` (or `site_journey`) any more. If this database has a `personal_statement` row with an old inline `heroImage` key, that key is now **ignored**; run the one-liner below once so the hero still shows. (The old key can stay in the row; it just does nothing.)
+Every image AND video the site shows comes **only** from `site_image` — nothing reads a media path out of `site_content` / `site_journey` / `site_project`. If this database has a `personal_statement` row with an old inline `heroImage` key, that key is now **ignored**; run the one-liner below once so the hero still shows. (The old key can stay in the row; it just does nothing.)
 
 ```sql
 INSERT INTO site_image (section, description, image_path)
@@ -318,7 +363,7 @@ LIMIT 1;
 
    or just write a full fresh object/array like in D.2.
 
-   The same rule covers a **journey detail sheet** — `INSERT` a new `site_journey` row with the same `journey_id` (shape in D.2, *Seed the journey detail sheets*); the newest row per `journey_id` wins.
+   The same rule covers a **journey detail sheet** (`site_journey`, same `journey_id`) and a **project detail sheet** (`site_project`, same `project_id`) — shapes in D.2 (*Seed the … detail sheets*); the newest row per key wins.
 3. Reload the page in the browser. The frontend fetches live from `GET /api/site-content`, so the change is visible immediately.
 4. Rollback, if needed: `INSERT` the old version again (it is still in the table — `SELECT ... ORDER BY created_at` to find it).
 
@@ -377,7 +422,7 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 | `personal_statement` | object | `body` (req), `heading`, `cta:{label,href}` | About-Me / main page |
 | `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | Qualifications & Awards section |
 | `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | Certifications section |
-| `projects` | array | per item: `id` (key + `/projects/<id>` route slug), `label` (req), `image_tag`; array order = scroller + dropdown order. No image path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) + navbar "Projects" dropdown |
+| `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
 | `journey` | array | per block: `id`,`year`,`title`,`body` (all req), `image_tag`; array order = page order | Journey section |
 | `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact section (below Journey) + footer icons |
 
@@ -390,13 +435,22 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 
 Optional per block — a block with no row just has a non-clickable card. Served in `GET /api/site-content` as `journeyDetails: { "<journey_id>": <content> }`.
 
-### `site_image` (pictures)
+### `site_project` (project click-through detail)
 
 | column | Meaning |
 |---|---|
-| `section` | which section the image belongs to — same slug set as above |
+| `project_id` | the `id` of an item in the `site_content` `projects` array; one pop-up per project, newest row wins |
+| `content` | `overview`, `features:[string]`, `technologies:[string]`, `githubUrl`, `demoUrl`, `videos:[{src_tag,poster_tag,caption}]` — all optional. `src_tag`/`poster_tag` name `site_image` rows (`section` = `projects`); no media path lives here. `overview` blank lines → paragraphs |
+
+Optional per project — a project with no row just has a non-clickable thumbnail. Served in `GET /api/site-content` as `projectDetails: { "<project_id>": <content> }`.
+
+### `site_image` (media)
+
+| column | Meaning |
+|---|---|
+| `section` | which section the media belongs to — same slug set as above |
 | `description` | slot label within the section + `<img alt>` text; `(section, description)` = one slot |
-| `image_path` | S3 object **key** only, e.g. `about_me/main_img.png` |
+| `image_path` | S3 object **key** only, e.g. `about_me/main_img.png` — images **and** `.mp4` clips |
 
 Known slots the frontend reads today:
 
@@ -406,13 +460,14 @@ Known slots the frontend reads today:
 | `qualifications` | `banner` | the Qualifications & Awards band image (optional) |
 | `certifications` | `banner` | the Certifications band image (optional) |
 | `projects` | *(each project's `image_tag` / `id`)* | that project's thumbnail in the Projects banner |
+| `projects` | *(each `src_tag` / `poster_tag` in a `site_project` `videos` entry)* | a project pop-up demo clip / its poster still |
 | `journey` | *(each block's `image_tag`)* | the image beside that Journey block (optional) |
 
 Rules:
 - `section` is a fixed slug — the frontend looks for these exact strings.
 - `image_path` holds the **S3 key only**, e.g. `about/hero.jpg` — never a full URL, never the bytes.
 - Optional `site_content` fields can be omitted entirely rather than set to `null`.
-- Every image on the site is a `site_image` row — hero, section banners, project thumbnails, journey pictures. No image path is ever stored in `site_content` or `site_journey`.
+- Every image and video on the site is a `site_image` row. No media path is ever stored in `site_content` / `site_journey` / `site_project`.
 - Legacy: an old `personal_statement` row may still carry a `heroImage` key. It is **ignored** — migrate it to a `site_image` (`personal_statement`, `hero`) row (see *Migrating an existing environment*).
 
 ---

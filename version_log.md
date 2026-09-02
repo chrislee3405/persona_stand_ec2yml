@@ -1,17 +1,38 @@
 
 ---
+# version 0.4.4
+
+- project detail popup window
+- auto video in project detail
+    - only one video play at a time based on user scroll
+- preload first video for all projects
+- "poster_tag" for initial one frame before video loaded in browser
+- minor UI improvement
+    - popup window exit button to circled "X"
+    - adjust popup window width
+
+---
 # version 0.4.3
 
 - project thumbnial banner
 - journey object image
 - clickable journey object in popup window
+- extract all knobs to one knobs.ts file
 - minor UI improvement
+    - Journey redesigned as a vertical timeline
+    - Projects botton on navbar show a dropdown and bring to the project position in home page
 
 ---
 # version 0.4.2
 
 - faster preload of first image
+- add Certifications section
 - minor UI improvement
+    - Full-bleed hero image band on About
+    - 4K monitor support
+    - Fixed a layout jump and Collapsed navbar below 992 px
+    - update Scroll-spy to support both scroll directions
+
 
 ---
 # version 0.4.1
