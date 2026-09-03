@@ -1,5 +1,23 @@
 
 ---
+# version 0.5.2
+
+- chatroom real online offline status
+- chatroom icon
+- UI improvement
+    - adaptable longer contact me section
+    - Journey timeline fade in at beginning
+    - consistent close button in detail popup window
+    - reloacte image of about me and qualification in small screen
+    - adjust text size, customize to different screen size
+    - unify colour code in home page to chatroom to blue
+- bug fix
+    - Project Details and Journey Details open at the top
+    - Journey section dot alignment in small screen
+    - eluminate navbar to image gap
+    - Chatroom header cut off on small screen when scrolled on home page before
+
+---
 # version 0.5.1
 
 - Chatroom UI implementation
