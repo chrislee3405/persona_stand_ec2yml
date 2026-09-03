@@ -1,5 +1,33 @@
 
 ---
+# version 0.5.1
+
+- Chatroom UI implementation
+    - basic UI
+    - wallpaper
+    - dialogue bubbles
+    - system message
+    - warp text in textbox
+    - send button animation
+- Typing indicator behaviour
+    - delay knob
+    - appear in between fragment reply
+- show Error reason
+    - red dialogue for rejected message
+    - able to show:
+        - long message
+        - reject by reject gate with reason
+        - reaching client cap
+- improve retrieve similiar question
+    - BM25 shortlist 5 questions from database
+    - new AI model to rank the shortlisted questions
+- UI improvement
+    - consent button
+    - Message spacing based in sender
+- system prompt update
+
+
+---
 # version 0.5.0 (all updates from 0.4.1 to 0.4.4)
 
 - database to store static content
