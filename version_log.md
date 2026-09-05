@@ -1,5 +1,25 @@
 
 ---
+# version 0.5.3
+
+- model orchestrate architecture improve
+    - split reply generation into fact grounding and reply generating
+    - combine scenario fetcher and doc fetcher
+- Codebase audit
+    - align pending cap between backend and frontend
+    - make _REJECT_RULES, SECTIONS list in knobs.ts, constants.py the single source
+    - Both inline history formatters now call prepare_history()
+    - update_conversation_code calls assert_ownership() instead of an inlined copy
+    - New <BottomSheet>; shared panel CSS hoisted
+    - Exception handlers registered once in main.py; both chat routes now have zero try/except
+    - Removed unused self.db, sass dep, df_dict storage, stale footer docstring.
+    - summarize_if_needed inlined.
+    - Memo reuses derived lists; projectItems memoized.
+    - New <SectionState> replaces five copies.
+    - Both alert() calls → in-strip error message.
+    - New lib/api.ts (postJson/getJson/errorDetail).
+
+---
 # version 0.5.2
 
 - chatroom real online offline status
