@@ -1,5 +1,31 @@
 
 ---
+# version 0.6.1
+
+- Sections fade in as they're scrolled to
+- Per-item reveal on the journey timeline
+- Journey card hover animation
+- add favicon, title and description
+- Palette colour theme
+- adjust Type scale
+- add name on about me
+- Chatroom Invite-code field collapsed behind a link 
+- consent window exit button only when terms fetching fail
+- Floating chatroom bottom on bottom right
+    - Handover + morph effect when scroll out
+- Chatroom name now fetch from database
+    - name load and stored in React state
+
+---
+# version 0.6.0 (all updates from 0.5.1 to 0.5.3)
+
+- model orchestrate architecture improve
+- chatroom UI implementation
+- Codebase audit
+- UI improvement
+- bug fix
+
+---
 # version 0.5.3
 
 - model orchestrate architecture improve

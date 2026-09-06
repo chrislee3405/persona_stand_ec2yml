@@ -156,11 +156,23 @@ Paste into the `psql` prompt. Fill every `<...>`. `$j$ ... $j$` is dollar-quotin
 INSERT INTO site_content (section, content) VALUES (
   'personal_statement',
   $j${
-    "heading": "<short heading, e.g. About Me>",
+    "owner": "<your name, e.g. Hang Chi Lee>",
+    "title": "<your role, e.g. Full-stack Engineer>",
     "body": "<1-3 sentence bio paragraph>",
     "cta": { "label": "<button text>", "href": "/chatroom" }
   }$j$::jsonb
 );
+-- "owner" is the name and becomes the page's <h1>; "title" is the role
+-- line under it. "title" replaced the old "heading" key -- the frontend
+-- still reads "heading" when "title" is missing, so an existing row keeps
+-- working, but write "title" from now on. To migrate a row in place:
+--   INSERT INTO site_content (section, content)
+--   SELECT 'personal_statement',
+--          (content - 'heading')
+--            || jsonb_build_object('title', content->>'heading',
+--                                  'owner', '<your name>')
+--   FROM site_content WHERE section = 'personal_statement'
+--   ORDER BY created_at DESC, id DESC LIMIT 1;
 
 -- 2. qualifications  → Qualifications & Awards section.  shape: ARRAY (array order = display order; degrees first, then awards)
 INSERT INTO site_content (section, content) VALUES (
@@ -230,6 +242,17 @@ INSERT INTO site_content (section, content) VALUES (
       { "label": "LinkedIn", "href": "https://www.linkedin.com/in/<handle>" },
       { "label": "GitHub",   "href": "https://github.com/<handle>" }
     ]
+  }$j$::jsonb
+);
+
+-- 7. chatroom  → the persona's display name in the chat header.  shape: OBJECT
+--    OPTIONAL. With no row the header falls back to personal_statement."owner",
+--    and then to a generic label -- so only add this to show a name that
+--    differs from the site owner's.
+INSERT INTO site_content (section, content) VALUES (
+  'chatroom',
+  $j${
+    "name": "<name shown in the chat header, e.g. Hang Chi Lee>"
   }$j$::jsonb
 );
 ```
@@ -419,12 +442,13 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 
 | `section` | JSON type | Fields | Shown on |
 |---|---|---|---|
-| `personal_statement` | object | `body` (req), `heading`, `cta:{label,href}` | About-Me / main page |
+| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}` | About-Me / main page |
 | `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | Qualifications & Awards section |
 | `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | Certifications section |
 | `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
 | `journey` | array | per block: `id`,`year`,`title`,`body` (all req), `image_tag`; array order = page order | Journey section |
 | `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact section (below Journey) + footer icons |
+| `chatroom` | object | `name` — persona display name; whole row optional, falls back to `personal_statement.owner` | Chatroom header |
 
 ### `site_journey` (journey click-through detail)
 
