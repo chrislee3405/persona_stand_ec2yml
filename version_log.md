@@ -1,5 +1,31 @@
 
 ---
+# version 0.6.2
+
+- point form in body text
+    - "- " / "* " lines in an overview / journey body render as a bullet list
+    - shared <Prose>, so every body field supports it
+    - one paragraph and one list can mix in the same field
+- project overview split into two
+    - thumbnail overview: point form, from the site_content "projects" row (new "overview" key)
+    - detail popup overview: paragraph, from the site_project row
+- project detail popup
+    - left-aligned bold header above each video (from "caption"), no caption below
+    - remove "Technologies used" heading, chips read on their own
+    - GitHub / Live demo buttons moved next to the title
+    - smaller overview and main features text
+- project thumbnail tech chips
+    - show every chip that fits two rows, "+N" bubble only on a 3rd row
+    - align left (was centred)
+- thumbnail hover overview centred, points spread evenly, each point left-aligned with a dot
+- title, description and og tags now fetched from database
+    - new <DocumentHead>, set from personal_statement on load
+    - index.html keeps only generic fallbacks, no personal content in the codebase
+    - og:image moved to a fixed S3 key (tools_icon/og_img.jpg)
+- chatroom send button hover / pressed colour blue -> brand orange
+- update model docstrings and Part_D for the bullet syntax and the split overview
+
+---
 # version 0.6.1
 
 - Sections fade in as they're scrolled to
@@ -18,6 +44,7 @@
 
 ---
 # version 0.6.0 (all updates from 0.5.1 to 0.5.3)
+# UI Design
 
 - model orchestrate architecture improve
 - chatroom UI implementation
@@ -93,6 +120,7 @@
 
 ---
 # version 0.5.0 (all updates from 0.4.1 to 0.4.4)
+# Multimedia
 
 - database to store static content
 - S3 and CloudFront for owner image and other resources
@@ -163,6 +191,7 @@
 
 ---
 # version 0.4.0 (all updates from 0.3.1 to 0.3.3)
+# Security
 
 - user consent function for data collection
 - privacy gate
@@ -212,6 +241,7 @@
 
 ---
 # version 0.3.0 (all updates from 0.2.1 to 0.2.3)
+# Full Chatbot Architecture
 
 - improve BM25 workflow
 - check gate
@@ -258,6 +288,7 @@
 
 ---
 # version 0.2.0
+# Core Chatbot Backbone
 
 - model orchestration
     - workflow to gather material for natural language generation
@@ -276,7 +307,8 @@
     - prevent conversation id tempering attack
 
 ---
-# version 0.1.0
+# version 0.1.0 
+# App Backbone
 
 - Fundemential Architecture Estbulished(Github, Github Action, EC2, ECR, RDS, GCP etc.)
 - Basic functionality

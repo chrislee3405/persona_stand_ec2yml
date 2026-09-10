@@ -2,8 +2,14 @@ services:
   backend:
     image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-trial}
     container_name: persona_backend
-    ports:
-      - "8000:8000"
+    # `expose`, not `ports`. Publishing 8000 bound it to 0.0.0.0 on the EC2
+    # host, so the only thing between the internet and an unauthenticated
+    # FastAPI instance -- /docs and /openapi.json included -- was a security
+    # group rule. The frontend reaches this over the compose network by
+    # service name, so nothing needed the mapping. To debug from the host,
+    # use `docker compose exec` or temporarily bind 127.0.0.1:8000:8000.
+    expose:
+      - "8000"
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=${DATABASE_URL}

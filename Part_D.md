@@ -96,7 +96,7 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 | column | type | notes |
 |---|---|---|
 | `id` | `serial` PK | auto |
-| `section` | `text` | slug the frontend expects: `personal_statement`, `qualifications`, `certifications`, `projects`, `journey`, `contact` |
+| `section` | `text` | slug the frontend expects: `personal_statement`, `qualifications`, `certifications`, `projects`, `journey`, `contact`, `chatroom`, `navbar`, `footer` |
 | `content` | `jsonb` | shape depends on the section — see **D.5** |
 | `created_at` | `timestamptz` | defaults to `now()`; newest row per `section` wins |
 
@@ -106,7 +106,7 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 |---|---|---|
 | `id` | `serial` PK | auto |
 | `section` | `text` | which section the image belongs to — same slug set as above |
-| `description` | `text` | slot label within the section (e.g. `hero`), also used as the `<img alt>`. `(section, description)` identifies one slot |
+| `description` | `text` | slot label within the section (e.g. `hero_desk`), also used as the `<img alt>`. `(section, description)` identifies one slot |
 | `image_path` | `text` | S3 object **key** only, e.g. `about_me/main_img.png` — never a URL, never bytes |
 | `created_at` | `timestamptz` | defaults to `now()`; newest row per `(section, description)` wins |
 
@@ -121,7 +121,7 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 
 A journey block with **no** `site_journey` row simply has a non-clickable card — the detail sheet is optional per block.
 
-`site_project` — the **detail** behind a Projects thumbnail, shown in a bottom pop-up when it is clicked (a sticky write-up on the left, feature-demo videos on the right). The thumbnail/label comes from the `projects` row in `site_content`; this table is the pop-up content, one JSONB row per version.
+`site_project` — the **detail** behind a Projects thumbnail, shown in a bottom pop-up when it is clicked (a sticky write-up on the left, feature-demo videos on the right). The thumbnail, label and the card's own point-form hover blurb come from the `projects` row in `site_content`; this table is the pop-up content (including its paragraph `overview`), one JSONB row per version.
 
 | column | type | notes |
 |---|---|---|
@@ -159,9 +159,20 @@ INSERT INTO site_content (section, content) VALUES (
     "owner": "<your name, e.g. Hang Chi Lee>",
     "title": "<your role, e.g. Full-stack Engineer>",
     "body": "<1-3 sentence bio paragraph>",
-    "cta": { "label": "<button text>", "href": "/chatroom" }
+    "cta": { "label": "<button text>", "href": "/chatroom" },
+    "resume": { "label": "Download CV", "key": "<S3 key of the PDF, e.g. about_me/cv.pdf>" },
+    "skills": [
+      { "group": "Frontend", "colour": "azure",  "items": ["React", "TypeScript"] },
+      { "group": "Backend",  "colour": "moss",   "items": ["Python", "FastAPI", "PostgreSQL"] },
+      { "group": "Cloud",    "colour": "accent", "items": ["AWS", "Docker"] }
+    ]
   }$j$::jsonb
 );
+-- "skills" renders as grouped pills under the role line. "colour" is a closed
+-- set -- accent | azure | moss | plum | slate -- and anything else falls back
+-- to slate, so a typo can never produce unreadable text. The GROUP LABEL is
+-- what conveys the grouping; colour only reinforces it.
+-- "resume.key" is an S3 OBJECT KEY, not a URL. Omit it and no CV button shows.
 -- "owner" is the name and becomes the page's <h1>; "title" is the role
 -- line under it. "title" replaced the old "heading" key -- the frontend
 -- still reads "heading" when "title" is missing, so an existing row keeps
@@ -207,6 +218,10 @@ INSERT INTO site_content (section, content) VALUES (
 --    `id` is the key AND the site_project.project_id that holds this
 --    project's pop-up detail (seeded further below). Clicking a thumbnail
 --    opens that pop-up; a project with no site_project row is not clickable.
+--    `overview` (optional) is the CARD's blurb, shown on hover — keep it
+--    to point form ("- one\n- two"). It is separate from the pop-up's
+--    overview (a paragraph on the site_project row); omit it and the card
+--    falls back to that paragraph.
 --    No image path here: `image_tag` names a site_image row (section
 --    "projects", description == image_tag, or `id` when omitted) and the
 --    thumbnail URL is built from that row's image_path — seeded under
@@ -214,7 +229,7 @@ INSERT INTO site_content (section, content) VALUES (
 INSERT INTO site_content (section, content) VALUES (
   'projects',
   $j$[
-    { "id": "persona-stand",    "label": "<caption / alt text>", "image_tag": "<site_image description — or omit to use id>" },
+    { "id": "persona-stand",    "label": "<caption / alt text>", "overview": "- <point one>\n- <point two>", "image_tag": "<site_image description — or omit to use id>" },
     { "id": "ransom-simulator", "label": "<caption / alt text>" }
   ]$j$::jsonb
 );
@@ -255,13 +270,39 @@ INSERT INTO site_content (section, content) VALUES (
     "name": "<name shown in the chat header, e.g. Hang Chi Lee>"
   }$j$::jsonb
 );
+
+-- 8. navbar  → the name beside the brand mark in the site header.  shape: OBJECT
+--    OPTIONAL -- falls back to personal_statement."owner".
+--    The mark itself is a fixed CDN object (tools_icon/tab_logo.png), the same
+--    file the favicon uses; swap the icon by overwriting that S3 key.
+INSERT INTO site_content (section, content) VALUES (
+  'navbar',
+  $j${
+    "name": "<name in the header, e.g. Hang Chi Lee>"
+  }$j$::jsonb
+);
+
+-- 9. footer  → the site footer.  shape: OBJECT
+--    OPTIONAL and every field optional. The YEAR is computed at render time,
+--    never stored, so it cannot go stale.
+INSERT INTO site_content (section, content) VALUES (
+  'footer',
+  $j${
+    "owner": "<name in the copyright line — omit to reuse personal_statement.owner>",
+    "note": "<one short line, e.g. Built with React, FastAPI and AWS>",
+    "links": [
+      { "label": "GitHub",   "href": "https://github.com/<handle>" },
+      { "label": "LinkedIn", "href": "https://www.linkedin.com/in/<handle>" }
+    ]
+  }$j$::jsonb
+);
 ```
 
 ⚠️ The footer's LinkedIn/GitHub icons are picked out of `contact.links` by matching the **label** (case-insensitive, must contain the word `linkedin` / `github`). Keep those labels.
 
 ### Seed the journey detail sheets
 
-Optional, one row per journey block that should open a pop-up when clicked. `journey_id` must equal the block's `id` in the `journey` array above. `body` is required; `heading` / `subtitle` / `highlights` / `links` are optional. Blank lines in `body` become paragraphs.
+Optional, one row per journey block that should open a pop-up when clicked. `journey_id` must equal the block's `id` in the `journey` array above. `body` is required; `heading` / `subtitle` / `highlights` / `links` are optional. In `body`, blank lines become paragraphs and lines starting `- ` or `* ` become a bullet list (point form) — the two can be mixed. `highlights` is a separate curated list always shown after the body.
 
 ```sql
 INSERT INTO site_journey (journey_id, content) VALUES (
@@ -269,7 +310,7 @@ INSERT INTO site_journey (journey_id, content) VALUES (
   $j${
     "heading": "<optional — defaults to the block title>",
     "subtitle": "<optional italic line, e.g. Brisbane, Australia>",
-    "body": "<the full story.\n\nBlank lines split paragraphs.>",
+    "body": "<the full story.\n\nBlank lines split paragraphs.\n\nWhat stood out:\n- lines starting with a dash become bullets\n- mix paragraphs and bullets freely>",
     "highlights": [
       "<optional bullet>",
       "<optional bullet>"
@@ -283,13 +324,13 @@ INSERT INTO site_journey (journey_id, content) VALUES (
 
 ### Seed the project detail sheets
 
-Optional, one row per project that should open a pop-up when its thumbnail is clicked. `project_id` must equal the `id` in the `projects` array above. Every field is optional. `overview` blank lines become paragraphs. `videos` are feature-demo clips shown on the right, one playing at a time as the viewer scrolls; `src_tag` / `poster_tag` name **`site_image`** rows (`section` = `projects`) whose `image_path` is the `.mp4` / `.jpg` S3 key — seed those under *Seed the images*.
+Optional, one row per project that should open a pop-up when its thumbnail is clicked. `project_id` must equal the `id` in the `projects` array above. Every field is optional. This `overview` is the **pop-up's** write-up — a paragraph (blank lines → paragraphs; `- ` / `* ` lines → a bullet list, via `<Prose>`). It is **not** the card's hover blurb — that is the separate `overview` on the `site_content` `projects` row — though the card falls back to this one when it has none. `videos` are feature-demo clips shown on the right, one playing at a time as the viewer scrolls; `src_tag` / `poster_tag` name **`site_image`** rows (`section` = `projects`) whose `image_path` is the `.mp4` / `.jpg` S3 key — seed those under *Seed the images*.
 
 ```sql
 INSERT INTO site_project (project_id, content) VALUES (
   '<project id, e.g. ransom-simulator>',
   $j${
-    "overview": "<what it is.\n\nBlank lines split paragraphs.>",
+    "overview": "<the full write-up. Blank lines split paragraphs. Bullets ('- ...') work here too, but keep the CARD's point-form summary on the site_content projects row.>",
     "features": ["<main feature>", "<main feature>"],
     "technologies": ["<e.g. FastAPI>", "<e.g. React>"],
     "githubUrl": "<https://github.com/…>",
@@ -305,13 +346,17 @@ INSERT INTO site_project (project_id, content) VALUES (
 
 ### Seed the images
 
-Separate table, one row per image slot. The frontend reads slot `hero` for the About-Me picture; add more slots (any `description`) as sections start using images. Upload the file to S3 first (**D.4**).
+Separate table, one row per image slot. Add slots (any `description`) as sections start using images. Upload the file to S3 first (**D.4**).
+
+The About-Me hero uses **two** slots, because the band crops very differently once it stacks: `hero_desk` is framed for the side-by-side layout (≥900px) and `hero_mob` for the stacked one (<900px). The browser downloads only the one its width matches. Either may be omitted and the other stands in — a missing `hero_mob` means phones get the desktop crop, which is degraded rather than broken. An earlier single `hero` slot is no longer read; if one still exists in your database it is inert and can be left or deleted.
 
 ```sql
--- About-Me hero picture. section + description identify the slot;
+-- About-Me hero pictures, one per layout. section + description identify the slot;
 -- image_path is the S3 object KEY only.
 INSERT INTO site_image (section, description, image_path) VALUES (
-  'personal_statement', 'hero', '<S3 object key, e.g. about_me/main_img.png>'
+  'personal_statement', 'hero_desk', '<S3 key framed for wide screens, e.g. about_me/main_desk_img.jpg>'
+), (
+  'personal_statement', 'hero_mob',  '<S3 key framed for narrow screens, e.g. about_me/main_mob_img.jpg>'
 );
 
 -- Projects banner thumbnails. `description` MUST equal the project's
@@ -442,20 +487,22 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 
 | `section` | JSON type | Fields | Shown on |
 |---|---|---|---|
-| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}` | About-Me / main page |
-| `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | Qualifications & Awards section |
-| `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | Certifications section |
-| `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
-| `journey` | array | per block: `id`,`year`,`title`,`body` (all req), `image_tag`; array order = page order | Journey section |
+| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}`, `resume:{label,key}`, `skills:[{group,colour,items}]` | About-Me / main page |
+| `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | **Education list inside About** (was its own section) |
+| `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | **Certification & Award** section (certs + awards) |
+| `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `overview` (the card's hover blurb — keep to point form; falls back to the `site_project` paragraph overview), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
+| `journey` | array | per block: `id`,`year`,`title`,`body` (all req), `image_tag`, `image_description` (alt text); array order = page order | Journey section |
 | `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact section (below Journey) + footer icons |
 | `chatroom` | object | `name` — persona display name; whole row optional, falls back to `personal_statement.owner` | Chatroom header |
+| `navbar` | object | `name` beside the brand mark; optional, falls back to `personal_statement.owner` | Site header |
+| `footer` | object | `owner`, `note`, `links`; all optional, year is computed | Site footer |
 
 ### `site_journey` (journey click-through detail)
 
 | column | Meaning |
 |---|---|
 | `journey_id` | the `id` of a block in the `site_content` `journey` array; one detail sheet per block, newest row wins |
-| `content` | `body` (req), `heading`, `subtitle`, `highlights:[string]`, `links:[{label,href}]`. Blank lines in `body` → paragraphs |
+| `content` | `body` (req), `heading`, `subtitle`, `highlights:[string]`, `links:[{label,href}]`. In `body`: blank lines → paragraphs, `- `/`* ` lines → bullet list |
 
 Optional per block — a block with no row just has a non-clickable card. Served in `GET /api/site-content` as `journeyDetails: { "<journey_id>": <content> }`.
 
@@ -464,7 +511,7 @@ Optional per block — a block with no row just has a non-clickable card. Served
 | column | Meaning |
 |---|---|
 | `project_id` | the `id` of an item in the `site_content` `projects` array; one pop-up per project, newest row wins |
-| `content` | `overview`, `features:[string]`, `technologies:[string]`, `githubUrl`, `demoUrl`, `videos:[{src_tag,poster_tag,caption}]` — all optional. `src_tag`/`poster_tag` name `site_image` rows (`section` = `projects`); no media path lives here. `overview` blank lines → paragraphs |
+| `content` | `overview`, `features:[string]`, `technologies:[string]`, `githubUrl`, `demoUrl`, `videos:[{src_tag,poster_tag,caption}]` — all optional. `src_tag`/`poster_tag` name `site_image` rows (`section` = `projects`); no media path lives here. This `overview` is the **pop-up's paragraph** write-up (blank lines → paragraphs, `- `/`* ` → bullets); the **card's** point-form blurb is the separate `overview` on the `site_content` `projects` row |
 
 Optional per project — a project with no row just has a non-clickable thumbnail. Served in `GET /api/site-content` as `projectDetails: { "<project_id>": <content> }`.
 
