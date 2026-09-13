@@ -160,7 +160,7 @@ INSERT INTO site_content (section, content) VALUES (
     "title": "<your role, e.g. Full-stack Engineer>",
     "body": "<1-3 sentence bio paragraph>",
     "cta": { "label": "<button text>", "href": "/chatroom" },
-    "resume": { "label": "Download CV", "key": "<S3 key of the PDF, e.g. about_me/cv.pdf>" },
+    "resume": { "label": "Download CV" },
     "skills": [
       { "group": "Frontend", "colour": "azure",  "items": ["React", "TypeScript"] },
       { "group": "Backend",  "colour": "moss",   "items": ["Python", "FastAPI", "PostgreSQL"] },
@@ -172,7 +172,9 @@ INSERT INTO site_content (section, content) VALUES (
 -- set -- accent | azure | moss | plum | slate -- and anything else falls back
 -- to slate, so a typo can never produce unreadable text. The GROUP LABEL is
 -- what conveys the grouping; colour only reinforces it.
--- "resume.key" is an S3 OBJECT KEY, not a URL. Omit it and no CV button shows.
+-- "resume" only labels the CV button beside the chat icon. The PDF itself is a
+-- site_image row (section personal_statement, description resume), seeded
+-- under "Seed the images". No row, no CV button.
 -- "owner" is the name and becomes the page's <h1>; "title" is the role
 -- line under it. "title" replaced the old "heading" key -- the frontend
 -- still reads "heading" when "title" is missing, so an existing row keeps
@@ -222,6 +224,8 @@ INSERT INTO site_content (section, content) VALUES (
 --    to point form ("- one\n- two"). It is separate from the pop-up's
 --    overview (a paragraph on the site_project row); omit it and the card
 --    falls back to that paragraph.
+--    `image_description` (optional) is the thumbnail's alt text: what the
+--    screenshot shows. Omit it and the alt falls back to `label`.
 --    No image path here: `image_tag` names a site_image row (section
 --    "projects", description == image_tag, or `id` when omitted) and the
 --    thumbnail URL is built from that row's image_path — seeded under
@@ -229,7 +233,7 @@ INSERT INTO site_content (section, content) VALUES (
 INSERT INTO site_content (section, content) VALUES (
   'projects',
   $j$[
-    { "id": "persona-stand",    "label": "<caption / alt text>", "overview": "- <point one>\n- <point two>", "image_tag": "<site_image description — or omit to use id>" },
+    { "id": "persona-stand",    "label": "<caption>", "image_description": "<thumbnail alt: what the screenshot shows>", "overview": "- <point one>\n- <point two>", "image_tag": "<site_image description — or omit to use id>" },
     { "id": "ransom-simulator", "label": "<caption / alt text>" }
   ]$j$::jsonb
 );
@@ -357,6 +361,12 @@ INSERT INTO site_image (section, description, image_path) VALUES (
   'personal_statement', 'hero_desk', '<S3 key framed for wide screens, e.g. about_me/main_desk_img.jpg>'
 ), (
   'personal_statement', 'hero_mob',  '<S3 key framed for narrow screens, e.g. about_me/main_mob_img.jpg>'
+);
+
+-- The CV button beside the chat icon. image_path is the PDF's S3 key: site_image
+-- holds any asset key, not only pictures. Omit the row and no CV button shows.
+INSERT INTO site_image (section, description, image_path) VALUES (
+  'personal_statement', 'resume', '<S3 key of the PDF, e.g. about_me/cv.pdf>'
 );
 
 -- Projects banner thumbnails. `description` MUST equal the project's
@@ -487,10 +497,10 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 
 | `section` | JSON type | Fields | Shown on |
 |---|---|---|---|
-| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}`, `resume:{label,key}`, `skills:[{group,colour,items}]` | About-Me / main page |
+| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}`, `resume:{label}` (the PDF is a `site_image` row: `personal_statement` / `resume`), `skills:[{group,colour,items}]` | About-Me / main page |
 | `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | **Education list inside About** (was its own section) |
 | `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | **Certification & Award** section (certs + awards) |
-| `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `overview` (the card's hover blurb — keep to point form; falls back to the `site_project` paragraph overview), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
+| `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `image_description` (thumbnail alt; falls back to `label`), `overview` (the card's hover blurb — keep to point form; falls back to the `site_project` paragraph overview), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
 | `journey` | array | per block: `id`,`year`,`title`,`body` (all req), `image_tag`, `image_description` (alt text); array order = page order | Journey section |
 | `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact section (below Journey) + footer icons |
 | `chatroom` | object | `name` — persona display name; whole row optional, falls back to `personal_statement.owner` | Chatroom header |

@@ -1,0 +1,15 @@
+# This repository is cloned onto the EC2 instance as ~/app, and the
+# instance's .env -- RDS master password, SESSION_SECRET_KEY, AWS account
+# id -- is created INSIDE that clone (Part_C C.1). Without this file a
+# single `git add .` on the instance would commit production credentials
+# to a public repository.
+.env
+.env.*
+!.env.example
+
+# The GCP Workload Identity config and any SSH keys, should they ever be
+# placed next to the compose file rather than in ~/secrets.
+secrets/
+gcp-wif-config.json
+*.pem
+*.key

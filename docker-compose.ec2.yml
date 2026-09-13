@@ -12,6 +12,23 @@ services:
       - "8000"
     environment:
       - PYTHONUNBUFFERED=1
+      # DEFAULTS TO development ON PURPOSE, and must stay that way until TLS
+      # is terminated in front of the frontend container.
+      #
+      # ENV=production does two things at once. The wanted one: it raises the
+      # log level to INFO, which stops the reply pipeline writing every
+      # visitor's full prompt, history and model response to this container's
+      # stdout. The one that bites: app/middleware.py passes it as
+      # `https_only` on the session cookie, and a browser NEVER sends a Secure
+      # cookie over plain http:// -- so switching this on before there is TLS
+      # empties every visitor's session on every request. Consent stops
+      # sticking, every chat turn returns 403, and every message opens a new
+      # conversation. The static site keeps working, which makes it look like
+      # a chat bug rather than a config change.
+      #
+      # SO: terminate TLS, then set ENV=production in this instance's .env.
+      # Both halves land together, which is the point.
+      - ENV=${ENV:-development}
       - DATABASE_URL=${DATABASE_URL}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-wif-config.json
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
@@ -21,20 +38,38 @@ services:
     networks:
       - persona_network
     restart: unless-stopped
+    # Bounded, and it was not. The json-file driver has no max-size or
+    # max-file by default, so the log grew until the root volume filled -- at
+    # which point Docker cannot write, containers wedge, and recovery over SSH
+    # is awkward because there is no space left for anything.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     # Prebuilt in CI and pushed to ECR (same as backend). The CloudFront
-    # base URL is hardcoded in the frontend source (src/lib/assetUrl.ts),
-    # so there is nothing to configure here.
+    # base URL is baked in at BUILD time from the VITE_CDN_BASE repository
+    # variable -- it reaches the JS bundle, index.html and nginx's CSP from
+    # that one value -- so there is nothing to configure here.
     image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-trial}
     container_name: persona_frontend
     ports:
-      - "80:80"
+      # Host 80 -> container 8080. The image is nginx-unprivileged, which runs
+      # as a non-root user and therefore cannot bind port 80 inside the
+      # container. Nothing changes for a visitor: the site is still on :80.
+      - "80:8080"
     depends_on:
       - backend
     networks:
       - persona_network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   persona_network:

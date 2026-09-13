@@ -61,6 +61,75 @@ docker compose -f docker-compose.ec2.yml up -d
 docker ps -a
 ```
 
+### ⚠️ One-off steps for the next deploy only
+
+The routine above is unchanged, but the release that introduces the async
+database layer, the durable rate-limit table and the non-root containers needs
+four things done once. Do them **in this order**, on the instance, before
+`docker compose up -d`.
+
+**1. `git pull` the ec2yml repo BEFORE pulling the new images.** The frontend
+container now runs nginx as a non-root user, so it listens on **8080** instead
+of 80, and `docker-compose.ec2.yml` publishes `80:8080` to match. A new
+frontend image under an old compose file publishes 80:80 at a container that
+is not listening there, and the site is simply refused. The `git pull` in the
+routine above already does this — just do not skip it.
+
+**2. Make the WIF credential readable by the container's user.** The backend
+now runs as uid 10001, not root. `~/secrets/gcp-wif-config.json` is owned by
+`ubuntu` (uid 1000), and if it was copied over with mode 600 the container
+cannot read it — Vertex AI then fails on every chat turn with a refresh error
+that does not mention permissions. The file describes how to fetch a token and
+holds no key material (see Part_A A.5), so world-readable is fine:
+
+Run in EC2 instance terminal
+```bash
+chmod 644 ~/secrets/gcp-wif-config.json
+ls -l ~/secrets/gcp-wif-config.json   # want -rw-r--r--
+```
+
+**3. Migrate `condition_text` to JSONB.** The consent policy is now
+`{"header"?, "condition"}` rather than a flat string. The app creates missing
+TABLES on startup but **never alters existing columns**, so this one change
+has to be applied by hand. It is safe and reversible-in-effect: existing text
+becomes a JSON string, which `ConsentService.normalise_terms` still reads as
+the legacy form (rendering with no header).
+
+Run in EC2 instance terminal — check first, and skip if it already says `jsonb`
+```bash
+docker compose -f docker-compose.ec2.yml exec backend python - <<'PY'
+import asyncio, os, asyncpg
+async def main():
+    url = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
+    conn = await asyncpg.connect(url)
+    for t in ("consent_policy", "consent_record"):
+        print(t, await conn.fetchval(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name=$1 AND column_name='condition_text'", t))
+    await conn.close()
+asyncio.run(main())
+PY
+```
+
+If either says `text`, run the conversion with psql (Part_D D.2 has the
+connection recipe):
+```sql
+ALTER TABLE consent_policy
+  ALTER COLUMN condition_text TYPE jsonb USING to_jsonb(condition_text);
+ALTER TABLE consent_record
+  ALTER COLUMN condition_text TYPE jsonb USING to_jsonb(condition_text);
+```
+
+**4. Confirm the `VITE_CDN_BASE` repository Variable is set** on the FRONTEND
+repo before pushing. The build now **fails** without it instead of quietly
+producing an image whose favicon, og:image and hero preloads contain the
+literal text `%VITE_CDN_BASE%`. Settings → Secrets and variables → Actions →
+Variables.
+
+Nothing else changes. `asyncpg` and the new `rate_limit_counter` table are
+handled automatically — the dependency by the image rebuild, the table by the
+startup schema check.
+
 ### Rolling back a bad deploy
 
 Both workflows tag every image with the commit SHA as well as the branch
@@ -76,6 +145,13 @@ IMAGE_TAG=<previous-sha> docker compose -f docker-compose.ec2.yml up -d
 Both images share the tag, so this rolls the frontend and backend back
 together. Put `IMAGE_TAG` back to `main` in `.env` once a fixed image has
 been pushed.
+
+⚠️ Rolling back **across** the release described above needs the compose file
+rolled back with it (`git checkout <prev> -- docker-compose.ec2.yml`), because
+an older frontend image listens on 80 while the newer compose file publishes
+`80:8080`. The database changes do not need undoing: an older image reads a
+`jsonb` `condition_text` fine, and an unused `rate_limit_counter` table is
+inert.
 
 ## C.3 After EC2 Stop/Start (public IP changes, unless using an Elastic IP)
 

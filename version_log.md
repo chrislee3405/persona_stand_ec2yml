@@ -1,5 +1,78 @@
 
 ---
+# version 0.6.3
+
+## Frontend
+
+- project thumbnail tech chips show at most 8 named chips then "+N"
+    - replaces the measured two-row trim, which fought its own ResizeObserver and re-rendered forever
+- chat request has a 150s AbortSignal
+    - a stalled socket used to leave the pending count, typing bubble and send queue wedged for the tab
+- consent card handles the unavailable state properly
+    - res.ok checked before parsing, so a 5xx no longer reads as "online"
+    - a failed "I Agree" says why instead of leaving the card untouched
+- CDN base is one value
+    - VITE_CDN_BASE reaches the bundle, index.html and the nginx CSP
+    - build fails when it is unset, instead of shipping a literal %VITE_CDN_BASE% in the favicon / og:image
+
+## Backend
+
+- startup work moved out of import time
+    - create_all runs in a lifespan handler, an unreachable db is a startup error not an import crash loop
+    - no placeholder consent policy seeded by the app, it is seed data now
+- whole turn deadline
+    - TURN_DEADLINE_SECONDS 100s < nginx proxy_read_timeout 120s < client AbortSignal 150s
+    - a timed out turn writes no backend message, so it cannot reach the next prompt's history
+- failed turns no longer store a traceback
+    - error row keeps an incident id + bounded message, the full traceback goes to the log only
+    - recovery path rolls back first and guards each write
+- gemini empty response raises GeminiEmptyResponseError instead of returning None
+- privacy gate (Presidio) offloaded to a threadpool, no longer blocks the event loop
+- summarization opens its own session, no transaction held across the model call
+- invite code brute force protection
+    - global daily failed-attempt cap + per-IP cap, MAX_DAILY_INVITE_CODE_FAILURES in constants.py
+    - only failed verifications count, 429 with the same generic message for both layers
+- POST /api/consent rate limited per IP per day, was unauthenticated unbounded row insertion
+- session id rotated on invite code verification
+    - conversation ownership and consent records moved to the new id in one transaction
+- consent terms unavailable state
+    - no policy -> 200 with nulls, database unreachable -> 503 with nulls, same inert card either way
+- BM25 corpus cache checks the corpus_cache row id each turn, DELETE FROM corpus_cache now takes effect
+- request bounds: conversationId and consent body length capped, stale conversationId now logged
+
+## Database
+
+- async database layer
+    - SQLAlchemy create_async_engine + AsyncSession + asyncpg, every service converted
+    - DATABASE_URL rewritten to +asyncpg at startup, sslmode passed through unchanged
+    - expire_on_commit=False, a regen commit no longer re-fetches the loaded history row by row
+    - get_recent_messages reads unlocked, no row lock held across the 6-11 model calls
+- daily rate limit counters moved to postgres
+    - new rate_limit_counter table, one row per (key, day)
+    - atomic INSERT ... ON CONFLICT DO UPDATE, survives restart, correct across workers
+    - 90 day retention, swept once per process per day
+    - in-memory state is concurrency only (in-flight counts, locks, pacing), all dropped when a session goes idle
+- consent_policy / consent_record condition_text is jsonb {header, condition}
+    - a bare string still reads as the legacy form, so existing rows keep working
+    - needs a one-off ALTER on an existing database, create_all never alters columns
+- content validator (app/validators/content_validator.py)
+    - shape check for every site_content section, journey / project detail, image and consent policy
+    - run by the seed loader and as a CLI before pasting into psql
+- seed data (app/models/seed/)
+    - every table's starting content as json + loader, skips anything already present
+
+## Infrastructure
+
+- containers run non-root
+    - backend uid 10001, frontend nginx uid 101 on port 8080, compose publishes 80:8080
+- --reload dropped from the backend image, kept as a compose command override for local dev
+- local db service added to docker-compose.yml, local work no longer tunnels to production
+- docker log rotation on every service (10m x 3)
+- ENV added to docker-compose.ec2.yml, defaults to development until TLS is in front
+- update Part_C with the one-off steps for this deploy
+    - pull the compose file before the images, WIF file mode, condition_text -> jsonb, VITE_CDN_BASE
+
+---
 # version 0.6.2
 
 - point form in body text
