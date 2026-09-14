@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-trial}
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-main}
     container_name: persona_backend
     # `expose`, not `ports`. Publishing 8000 bound it to 0.0.0.0 on the EC2
     # host, so the only thing between the internet and an unauthenticated
@@ -53,7 +53,7 @@ services:
     # base URL is baked in at BUILD time from the VITE_CDN_BASE repository
     # variable -- it reaches the JS bundle, index.html and nginx's CSP from
     # that one value -- so there is nothing to configure here.
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-trial}
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-main}
     container_name: persona_frontend
     ports:
       # Host 80 -> container 8080. The image runs nginx as the non-root
