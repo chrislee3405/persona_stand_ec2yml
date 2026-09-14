@@ -1,5 +1,93 @@
 
 ---
+# version 0.6.4
+
+## Frontend
+
+- chatroom initialisation moved to GET /api/chatroom_initialize
+    - one call returns the consent terms and whether the session is verified
+    - a second tab of a verified session keeps invite tier, it used to be sent as guest
+    - verified is its own flag in ChatContext, no longer derived from the stored code
+- "Disagree with consent" under the chatroom
+    - withdraws consent on the server, the consent card comes back until agreed again
+    - local state flips only after the server confirms, a failure says why
+- conversation reference shown under the chatroom, quoted when asking the owner to delete a conversation
+- welcome notice explains the chat is an AI version of Chris, replaces "System connected."
+- user message bubble light blue -> brand orange tint (--brand-accent-line)
+- wrapped message bubbles shrink to their longest line
+    - a two-line bubble used to stretch to max-width with an empty strip beside the text
+    - bubble white-space pre-wrap -> pre-line, the space at a wrap is no longer measured
+- education in About shown as cards, same as Certification & Award
+    - "Education Qualification" heading removed, the list keeps an aria-label
+    - bullet list variant of CredentialList removed
+- safeHref rejects /\evil.com and a leading backslash, browsers resolved them off-site
+- assetUrl rejects keys with quotes, brackets, backslash, whitespace or control characters before they reach a CSS url()
+- navbar Cmd / Ctrl / Shift / middle click opens a new tab again
+- small fixes
+    - duplicate React keys on skill pills
+    - cleared conversationId removed from sessionStorage instead of kept
+    - stored chat history capped at 200 messages
+    - turning on reduced motion mid-visit now stops the section reveal
+    - hold timer reads verification from a ref, a turn held while verifying no longer goes to guestchat
+    - focus returns to the opener when the consent dialog unmounts
+    - drag-scroll listeners attached only during a drag
+    - chat and active-section context values memoised
+- dead code removed: CERT_HERO_DEFAULTS, scrimStart / scrimEnd and colour types, void activeIndex
+- npm run dev proxies /api to :8000, the dev server no longer 404s every API call
+- package.json version 0.0.0 -> 0.6.4, .env.example added
+
+## Backend
+
+- invite code no longer readable in the session cookie
+    - cookie holds the code's database id, POST /api/code no longer echoes the code
+    - deleting a code row revokes it, the session's next invite message gets 401 and falls back to guest
+    - sessions holding the old key verify once more
+- consent withdrawal
+    - POST /api/consent/withdraw stamps withdrawn_at, the record is kept as proof
+    - agreeing again inserts a new row, chat returns 403 until then
+- GET /api/consent replaced by GET /api/chatroom_initialize (chatroom_router.py), 503 keeps the same body shape
+- BM25 with fewer than 3 question_bank rows no longer scores every candidate 0
+    - flat IDF floor when no term has a positive IDF, with a warning
+- content services read the highest id as the current version, created_at is metadata only
+- naming
+    - model_collarborate -> model_collaborate (package and service)
+    - Sender.NOT_SAVED_USER -> UNANSWERED_USER, stored value "not_saved_user" unchanged
+    - ablation_test.py / naturalness_test.py -> probe_*.py so pytest will not collect them
+- dead code removed: unused ORM relationships, unused min_score parameter
+- stale comments corrected
+    - gemini per-call timeout vs TURN_DEADLINE_SECONDS
+    - rate limiter pacing applies to concurrent messages only
+    - CORS note now covers the vite dev proxy
+- app/dependencies/__init__.py and .env.example added
+
+## Database
+
+- consent_record.withdrawn_at
+    - unique (session_id, policy_version) constraint replaced by a partial unique index over active records
+- site_content / site_image / site_journey / site_project indexes (key, created_at) -> (key, id DESC)
+- personality_reference column cluture_background -> culture_background
+- index=True dropped from 12 primary keys, it created a duplicate ix_<table>_id next to the primary key index
+- message.selected_scenario / selected_document documented as owner review metadata
+- seed: 2026-current journey detail rewritten for the current status and side project
+- existing databases need one-off DDL for all of the above, see Part_C steps 6-9
+
+## Infrastructure
+
+- nginx
+    - per-IP rate limit on /api/ (10 r/s, burst 20), 429 past it
+    - client_max_body_size 32k on /api/, server_tokens off
+    - CSP connect-src includes the CDN, the project media prefetch was blocked since 0.6.2
+    - hidden file deny moved before the asset rule, ACME challenge path allowed for future TLS
+    - long-cache extensions add webp, avif, mp4, webm, map, mjs
+    - resolver and upstream keepalive limits documented
+- update Part_C with one-off steps 5-9 and rollback notes
+    - deploy both images together, withdrawn_at + partial index, column rename right before up -d, index swap, duplicate primary key index drop
+- Part_A ECR tag immutability excludes main / trial, not latest
+- Part_B and README repo name persona_stand_frontend -> persona_stand_front
+- Part_D CDN setup uses the VITE_CDN_BASE variable, skills "colour" key marked ignored
+- backend README: conversation deletion steps, highest-id content query
+
+---
 # version 0.6.3
 
 ## Frontend

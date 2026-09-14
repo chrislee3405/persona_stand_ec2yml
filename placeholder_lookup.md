@@ -40,7 +40,7 @@
  - Names you chose when creating them (Part A.5) — viewable under IAM & Admin → Workload Identity Federation
 
 # <project-id-or-number-matching-what-your-code-expects> - GCP_PROJECT_ID env var value
- - Check your backend code (wherever vertexai.init(project=...) is called) to see whether it expects the Project ID string or Project Number, then use the matching value from above
+ - The backend passes it unchanged as `project=` to the Vertex AI client (`genai.Client(vertexai=True, ...)` in persona_stand_back/app/services/ai/gemini_service.py) — use the Project ID from above
 
 # <path-to-application_default_credentials.json> - Local ADC credentials path 
  - Created by gcloud auth application-default login — default location is ~/.config/gcloud/application_default_credentials.json (macOS/Linux) or %APPDATA%\gcloud\application_default_credentials.json (Windows)
@@ -54,7 +54,7 @@
 
 # <cloudfront-domain> - CloudFront distribution domain that serves the images
  - AWS Console → CloudFront → Distributions → your distribution → "Distribution domain name" (e.g. d5ydhntfck9s8.cloudfront.net)
- - Also hardcoded in persona_stand_frontend/src/lib/assetUrl.ts — the two must match
+ - Also the value of the `VITE_CDN_BASE` repository Variable on persona_stand_front (as `https://<cloudfront-domain>`, no trailing slash), and of `VITE_CDN_BASE` in persona_stand_front/.env for local builds — all must match (Part D.1)
 
 # <db-name> / <master-username> / <master-password> / <rds-endpoint>
- - Same values as Part A.4 / B.2 — reused in Part D to connect with psql over the SSH tunnel
+ - Same values as Part A.4 / C.1 — reused in Part D to connect with psql over the SSH tunnel (local development uses its own database, Part B, and never needs them)

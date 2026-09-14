@@ -3,7 +3,7 @@ This file contains the deployment notes and setup procedure for a Persona Stand 
 - **Frontend:** React + TypeScript + Vite
 - **Backend:** Python + FastAPI
 - **Containers:** Docker / Docker Compose
-- **AWS:** EC2, ECR, RDS, IAM
+- **AWS:** EC2, ECR, RDS, IAM, S3 + CloudFront (images and video)
 - **GCP:** Vertex AI + Workload Identity Federation
 - **CI/CD:** GitHub Actions with AWS OIDC
 
@@ -47,21 +47,24 @@ EC2
               AWS IAM Role
 ```
 
-For a public deployment, the recommended traffic flow is:
+A visitor's request flows like this:
 
 ```text
 Internet
    │
-   ▼
-EC2 :80 / :443
+   ├── HTTP :80 ─────────────► EC2
+   │                            │
+   │                            ▼
+   │                  frontend container — nginx (listens :8080, published as :80)
+   │                            ├── the React SPA
+   │                            └── /api/ ──► backend container — FastAPI :8000 (not published)
+   │                                                 ├── Amazon RDS (PostgreSQL)
+   │                                                 └── Google Vertex AI (Gemini)
    │
-   ▼
-Reverse Proxy
-   ├── Frontend
-   └── /api → FastAPI :8000
+   └── HTTPS ────────────────► CloudFront ──► S3   (images, video, CV)
 ```
 
-The frontend should preferably call the backend through the same public origin, such as `/api`, rather than embedding the EC2 public IP into the Vite build.
+nginx inside the frontend container is the reverse proxy: the browser calls relative `/api/...` paths on the same origin, so no backend address is ever built into the frontend, and the backend port is never exposed on the host. TLS is not terminated yet — until it is, the site is plain HTTP on :80 and `ENV` must stay `development` (see the note in `docker-compose.ec2.yml`).
 
 ---
 
@@ -72,7 +75,7 @@ The application is separated into three GitHub repositories.
 ## 2.1 Frontend Repository
 
 ```text
-persona_stand_frontend/
+persona_stand_front/
 ├── src/
 ├── public/
 ├── package.json
@@ -129,10 +132,16 @@ The backend GitHub Actions workflow builds the backend Docker image and pushes i
 ```text
 persona_stand_ec2yml/
 ├── docker-compose.ec2.yml
-└── README.md
+├── README.md               (this file: architecture + Part 0)
+├── Part_A.md               first-time infrastructure setup
+├── Part_B.md               local development workflow
+├── Part_C.md               deployment and ongoing operations
+├── Part_D.md               site content and images
+├── placeholder_lookup.md   where each <placeholder> value comes from
+└── version_log.md
 ```
 
-This repository contains the Docker Compose configuration used to deploy the application on AWS EC2.
+This repository contains the Docker Compose configuration used to deploy the application on AWS EC2, and the setup manual.
 
 `docker-compose.ec2.yml` pulls the pre-built frontend and backend images from Amazon ECR and runs them on the EC2 instance.
 
@@ -143,7 +152,7 @@ The EC2 repository is a deployment/configuration repository rather than an appli
 ## 2.4 Repository and Deployment Relationship
 
 ```text
-persona_stand_frontend
+persona_stand_front
         │
         │ GitHub Actions
         ▼
@@ -175,7 +184,7 @@ persona_stand_back         │
 There are two independent GitHub Actions workflows:
 
 ```text
-persona_stand_frontend/.github/workflows/deploy.yml
+persona_stand_front/.github/workflows/deploy.yml
         ↓
 Build frontend image
         ↓
@@ -220,8 +229,8 @@ Part A — First-Time Infrastructure Setup
 
 Part B — Local Development Workflow 
     ├── B.1 Repository & Dependencies 
-    ├── B.2 Local Database Connection 
-    ├── B.3 Local Vertex AI Testing 
+    ├── B.2 Environment Files 
+    ├── B.3 Local Vertex AI Credentials 
     └── B.4 Running the App Locally
 
 Part C — Deployment & Ongoing Operations 

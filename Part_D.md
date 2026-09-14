@@ -19,7 +19,7 @@ FastAPI ──► RDS  (site_content: one JSONB row per section version)
         └─► RDS  (site_project: one JSONB row per project detail version)
    │
    │ returns { "content": { "personal_statement": {...}, "journey": [...], ... },
-   │           "images":  { "personal_statement": [ {"description":"hero","path":"about/hero.jpg"} ], ... },
+   │           "images":  { "personal_statement": [ {"description":"hero_desk","path":"about/hero.jpg"} ], ... },
    │           "journeyDetails": { "2024-master-ai": { "body": "...", ... }, ... },
    │           "projectDetails": { "ransom-simulator": { "overview": "...", "videos": [...], ... }, ... } }
    ▼
@@ -34,8 +34,8 @@ Frontend renders the page
 ```
 
 - **Text** — the frontend calls `GET /api/site-content` on page load and renders whatever it gets. Changing text is a database-only operation; **no redeploy**.
-- **Images** — text and images are stored **separately**: text in `site_content`, images in `site_image`. `site_image` stores only the object **key** (e.g. `about/hero.jpg`), never a full URL and never the image itself. The frontend prepends the CloudFront base URL, which is hardcoded once in `persona_stand_frontend/src/lib/assetUrl.ts`.
-- **Versioning** — you never `UPDATE` a `site_content` or `site_image` row. To change something you `INSERT` a new row (same `section` for text, same `section` + `description` for an image); the newest `created_at` wins, and the old rows stay as history.
+- **Images** — text and images are stored **separately**: text in `site_content`, images in `site_image`. `site_image` stores only the object **key** (e.g. `about/hero.jpg`), never a full URL and never the image itself. The frontend prepends the CloudFront base URL, which comes from the `VITE_CDN_BASE` build variable (see D.1).
+- **Versioning** — you never `UPDATE` a `site_content` or `site_image` row. To change something you `INSERT` a new row (same `section` for text, same `section` + `description` for an image); the row with the highest `id` wins, and the old rows stay as history. (`created_at` is kept as record metadata; it does not decide which version is current.)
 
 ---
 
@@ -73,15 +73,18 @@ https://<cloudfront-domain>/
 
 ### Point the frontend at CloudFront
 
-Edit `persona_stand_frontend/src/lib/assetUrl.ts` **— Where: your local machine, in the frontend repo** — and set the hardcoded base to your `<cloudfront-domain>`:
+Set `VITE_CDN_BASE` to `https://<cloudfront-domain>` (no trailing slash). Nothing in the code carries the domain; this one variable reaches the bundle (`src/lib/assetUrl.ts`), `index.html`, and nginx's Content-Security-Policy, all at build time.
 
-```ts
-const CDN_BASE = (import.meta.env.VITE_CDN_BASE ?? 'https://<cloudfront-domain>').replace(/\/$/, '');
+- **Where: GitHub** — `persona_stand_front` → **Settings → Secrets and variables → Actions → Variables** → `VITE_CDN_BASE`. The workflow writes it into `.env` before `docker build`, and fails the build if it is unset.
+- **Where: your local machine** — `persona_stand_front/.env`, for `npm run build`, `npm run dev` and local `docker compose` builds:
+
+```text
+VITE_CDN_BASE=https://<cloudfront-domain>
 ```
 
-Commit and push. The frontend GitHub Actions workflow builds a new image and pushes it to ECR; redeploy it onto EC2 with the **Part C.2** steps.
+Re-run (or push to) the frontend workflow so it builds a new image and pushes it to ECR; redeploy it onto EC2 with the **Part C.2** steps.
 
-⚠️ Because Vite inlines this value at build time, the CloudFront domain is baked into the frontend image. Changing it later means editing this line and redeploying the frontend.
+⚠️ Because the value is inlined at build time, the CloudFront domain is baked into the frontend image. Changing it later means updating the variable and rebuilding and redeploying the frontend.
 
 ---
 
@@ -98,7 +101,7 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 | `id` | `serial` PK | auto |
 | `section` | `text` | slug the frontend expects: `personal_statement`, `qualifications`, `certifications`, `projects`, `journey`, `contact`, `chatroom`, `navbar`, `footer` |
 | `content` | `jsonb` | shape depends on the section — see **D.5** |
-| `created_at` | `timestamptz` | defaults to `now()`; newest row per `section` wins |
+| `created_at` | `timestamptz` | defaults to `now()`; record metadata only — the highest `id` per `section` is the current version |
 
 `site_image` — the page **images**, one row per version of each image slot. Text and images are separate now: a section's picture is not a key inside its JSON, it is a `site_image` row.
 
@@ -108,7 +111,7 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 | `section` | `text` | which section the image belongs to — same slug set as above |
 | `description` | `text` | slot label within the section (e.g. `hero_desk`), also used as the `<img alt>`. `(section, description)` identifies one slot |
 | `image_path` | `text` | S3 object **key** only, e.g. `about_me/main_img.png` — never a URL, never bytes |
-| `created_at` | `timestamptz` | defaults to `now()`; newest row per `(section, description)` wins |
+| `created_at` | `timestamptz` | defaults to `now()`; record metadata only — the highest `id` per `(section, description)` is the current version |
 
 `site_journey` — the **expanded story** behind a Journey card, shown in a bottom pop-up when the card is clicked. The card's summary still comes from the `journey` row in `site_content`; this table is the long-form detail, one JSONB row per version.
 
@@ -117,7 +120,7 @@ The backend calls `Base.metadata.create_all(...)` on startup, so the `site_conte
 | `id` | `serial` PK | auto |
 | `journey_id` | `text` | the `id` of the block in the `site_content` `journey` array this detail belongs to, e.g. `2024-master-ai`. Not a DB foreign key (the journey array is JSONB) — keep the two in sync by hand |
 | `content` | `jsonb` | `body` (req), `heading`, `subtitle`, `highlights:[…]`, `links:[{label,href}]` — see **D.5** |
-| `created_at` | `timestamptz` | defaults to `now()`; newest row per `journey_id` wins |
+| `created_at` | `timestamptz` | defaults to `now()`; record metadata only — the highest `id` per `journey_id` is the current version |
 
 A journey block with **no** `site_journey` row simply has a non-clickable card — the detail sheet is optional per block.
 
@@ -128,15 +131,15 @@ A journey block with **no** `site_journey` row simply has a non-clickable card �
 | `id` | `serial` PK | auto |
 | `project_id` | `text` | the `id` of the item in the `site_content` `projects` array this detail belongs to, e.g. `ransom-simulator`. Not a DB foreign key — keep the two in sync by hand |
 | `content` | `jsonb` | `overview`, `features:[…]`, `technologies:[…]`, `githubUrl`, `demoUrl`, `videos:[{src_tag,poster_tag,caption}]` — see **D.5**. No media path here — `src_tag` / `poster_tag` name `site_image` rows |
-| `created_at` | `timestamptz` | defaults to `now()`; newest row per `project_id` wins |
+| `created_at` | `timestamptz` | defaults to `now()`; record metadata only — the highest `id` per `project_id` is the current version |
 
 A project with **no** `site_project` row simply has a non-clickable thumbnail — the pop-up is optional per project.
 
 ### Connect to the database
 
-Reuse the SSH tunnel from **Part B.2** (needs the `psql` client from **Part 0.7**).
+RDS is not reachable from the internet, so connect through an SSH tunnel via the EC2 instance (needs the `psql` client from **Part 0.7**). Local port 5433 is used so it never collides with a local Postgres (5432) or the local compose database (5434).
 
-Run in Local machine terminal — keep this running in its own window (same as B.2)
+Run in Local machine terminal — keep this running in its own window
 ```bash
 ssh -i /path/to/your-key.pem -L 5433:<rds-endpoint>:5432 ubuntu@<ec2-public-ip> -N
 ```
@@ -162,15 +165,15 @@ INSERT INTO site_content (section, content) VALUES (
     "cta": { "label": "<button text>", "href": "/chatroom" },
     "resume": { "label": "Download CV" },
     "skills": [
-      { "group": "Frontend", "colour": "azure",  "items": ["React", "TypeScript"] },
-      { "group": "Backend",  "colour": "moss",   "items": ["Python", "FastAPI", "PostgreSQL"] },
-      { "group": "Cloud",    "colour": "accent", "items": ["AWS", "Docker"] }
+      { "group": "Frontend", "items": ["React", "TypeScript"] },
+      { "group": "Backend",  "items": ["Python", "FastAPI", "PostgreSQL"] },
+      { "group": "Cloud",    "items": ["AWS", "Docker"] }
     ]
   }$j$::jsonb
 );
--- "skills" renders as grouped pills under the role line. "colour" is a closed
--- set -- accent | azure | moss | plum | slate -- and anything else falls back
--- to slate, so a typo can never produce unreadable text. The GROUP LABEL is
+-- "skills" renders as grouped pills under the role line. Pill colour is not
+-- configurable: groups alternate between the two brand colours by position.
+-- An older row's "colour" key is accepted and ignored. The GROUP LABEL is
 -- what conveys the grouping; colour only reinforces it.
 -- "resume" only labels the CV button beside the chat icon. The PDF itself is a
 -- site_image row (section personal_statement, description resume), seeded
@@ -185,9 +188,10 @@ INSERT INTO site_content (section, content) VALUES (
 --            || jsonb_build_object('title', content->>'heading',
 --                                  'owner', '<your name>')
 --   FROM site_content WHERE section = 'personal_statement'
---   ORDER BY created_at DESC, id DESC LIMIT 1;
+--   ORDER BY id DESC LIMIT 1;
 
--- 2. qualifications  → Qualifications & Awards section.  shape: ARRAY (array order = display order; degrees first, then awards)
+-- 2. qualifications  → Education cards inside About Me.  shape: ARRAY (array order = display order)
+--    Degrees only. Awards and certificates go in `certifications` below.
 INSERT INTO site_content (section, content) VALUES (
   'qualifications',
   $j$[
@@ -201,7 +205,7 @@ INSERT INTO site_content (section, content) VALUES (
   ]$j$::jsonb
 );
 
--- 3. certifications  → Certifications section.  shape: ARRAY (array order = display order)
+-- 3. certifications  → Certification & Award section (certificates and awards).  shape: ARRAY (array order = display order)
 INSERT INTO site_content (section, content) VALUES (
   'certifications',
   $j$[
@@ -238,7 +242,7 @@ INSERT INTO site_content (section, content) VALUES (
   ]$j$::jsonb
 );
 
--- 5. journey  → Journey page.  shape: ARRAY of blocks (array order = top-to-bottom order)
+-- 5. journey  → My Journey section on the main page.  shape: ARRAY of blocks (array order = top-to-bottom order)
 --    `image_tag` (optional) names a site_image row (section "journey",
 --    description == the tag). The click-through detail is a site_journey
 --    row (seeded further below), matched by the block's `id`.
@@ -250,7 +254,8 @@ INSERT INTO site_content (section, content) VALUES (
   ]$j$::jsonb
 );
 
--- 6. contact  → Contact section (below Journey on the main page) + the footer social icons.  shape: OBJECT
+-- 6. contact  → Contact Me section (below Journey on the main page).  shape: OBJECT
+--    `links` also stand in for the footer's links when the footer row has none.
 INSERT INTO site_content (section, content) VALUES (
   'contact',
   $j${
@@ -302,11 +307,11 @@ INSERT INTO site_content (section, content) VALUES (
 );
 ```
 
-⚠️ The footer's LinkedIn/GitHub icons are picked out of `contact.links` by matching the **label** (case-insensitive, must contain the word `linkedin` / `github`). Keep those labels.
+⚠️ The Contact section's LinkedIn/GitHub icons are picked out of `contact.links` by matching the **label** (case-insensitive, must contain the word `linkedin` / `github`). Keep those labels. The footer shows its links as plain text: `footer.links`, or `contact.links` when the footer has none.
 
 ### Seed the journey detail sheets
 
-Optional, one row per journey block that should open a pop-up when clicked. `journey_id` must equal the block's `id` in the `journey` array above. `body` is required; `heading` / `subtitle` / `highlights` / `links` are optional. In `body`, blank lines become paragraphs and lines starting `- ` or `* ` become a bullet list (point form) — the two can be mixed. `highlights` is a separate curated list always shown after the body.
+Optional, one row per journey block that should open a pop-up when clicked. `journey_id` must equal the block's `id` in the `journey` array above. `body` is required; `heading` / `subtitle` / `highlights` / `links` are optional. In `body`, blank lines become paragraphs and lines starting `- ` or `* ` become a bullet list (point form) — the two can be mixed. `highlights` is a separate curated list always shown after the body. A link's `href` is either `https://…` for an external page or a site path such as `/chatroom` or `/#projects`; anything else is rejected by the validator and rendered as plain text.
 
 ```sql
 INSERT INTO site_journey (journey_id, content) VALUES (
@@ -320,7 +325,7 @@ INSERT INTO site_journey (journey_id, content) VALUES (
       "<optional bullet>"
     ],
     "links": [
-      { "label": "<e.g. Project write-up>", "href": "<https://… or /route>" }
+      { "label": "<e.g. Chat with my AI persona>", "href": "/chatroom" }
     ]
   }$j$::jsonb
 );
@@ -337,8 +342,8 @@ INSERT INTO site_project (project_id, content) VALUES (
     "overview": "<the full write-up. Blank lines split paragraphs. Bullets ('- ...') work here too, but keep the CARD's point-form summary on the site_content projects row.>",
     "features": ["<main feature>", "<main feature>"],
     "technologies": ["<e.g. FastAPI>", "<e.g. React>"],
-    "githubUrl": "<https://github.com/…>",
-    "demoUrl": "<https://… — or omit>",
+    "githubUrl": "https://github.com/<you>/<repo>",
+    "demoUrl": "https://<demo-site>",
     "videos": [
       { "src_tag": "<site_image description for the .mp4>",
         "poster_tag": "<site_image description for a .jpg still — or omit>",
@@ -374,7 +379,7 @@ INSERT INTO site_image (section, description, image_path) VALUES (
 -- `image_tag` is omitted). image_path is the S3 KEY only.
 INSERT INTO site_image (section, description, image_path) VALUES
   ('projects', 'persona-stand', '<S3 key, e.g. projects/persona_stand_thumbnail.jpg>'),
-  ('projects', 'ransom-sim',    '<S3 key, e.g. projects/ransom_sim_thumbnail.jpg>');
+  ('projects', 'ransom-simulator', '<S3 key, e.g. projects/ransom_sim_thumbnail.jpg>');
 
 -- Project pop-up demo clips + posters. site_image also holds .mp4 keys.
 -- `description` MUST equal the `src_tag` / `poster_tag` in the site_project
@@ -384,24 +389,64 @@ INSERT INTO site_image (section, description, image_path) VALUES
   ('projects', 'ransom-negotiation-poster', '<S3 key, e.g. projects/ransom/negotiation_poster.jpg>');
 ```
 
+### Seed the consent policy, invite codes and persona data
+
+Not site content, but a new database needs all three before the chatroom is useful, and **nothing creates them automatically** — the backend creates empty tables on startup and no rows.
+
+**Consent policy — required.** With no row, the chatroom shows "Consent terms are currently unavailable" and refuses every message. Write new wording as a **new** row with a new version; never edit an existing one, or past `consent_record` rows stop meaning what they recorded.
+
+```sql
+INSERT INTO consent_policy (version, condition_text) VALUES (
+  'v1',
+  $j${
+    "header": "<one-line purpose statement shown above the terms>",
+    "condition": "- <first term>\n- <second term>\n\nClicking \"I Agree\" means you accept this."
+  }$j$::jsonb
+);
+-- "condition" is required: the terms, rendered with the same "- " bullets and
+-- blank-line paragraphs as every other body field. "header" is optional.
+-- persona_stand_back/app/models/seed/consent_policy.json is a working example.
+```
+
+**Invite codes.** One per company you give access to. An invite session gets a larger regeneration budget and pending-message cap, and is exempt from the per-IP guest limit. Deleting the row revokes it: any session holding the code drops to guest on its next message.
+
+```sql
+INSERT INTO code (code, description) VALUES ('<generated-code>', '<who it was issued to>');
+```
+
+Generate the code on your local machine with `python -c "import secrets; print(secrets.token_urlsafe(12))"`. Never insert a code that appears anywhere public, such as a local development code from a README.
+
+**Persona data — required for real answers.** The chat pipeline answers only from these tables. With them empty it still runs, but it has no identity to speak as and declines every factual question.
+
+| Table | Columns | Rows |
+|---|---|---|
+| `personality_reference` | `legal_name`, `prefer_name`, `culture_background`, `core_personality` | one (only the first row is read) |
+| `doc_reference` | `document_topic` (unique), `topic_description`, `content` | one per fact topic, e.g. `EDUCATION BACKGROUND`, `WORKING EXPERIENCE` |
+| `scenario_reference` | `scenario_topic` (unique), `topic_description`, `content` | one per interview situation, e.g. `TEAMWORK`, `WEAKNESSES` |
+| `question_bank` | `question`, `answer` | example interview Q&A for retrieval, **at least three** |
+
+`topic_description` is what the model reads when choosing topics for a message, so describe what the topic covers rather than repeating its name. After adding or changing `question_bank` rows, run `DELETE FROM corpus_cache;` so the retrieval index is rebuilt on the next chat turn.
+
+⚠️ Do not point the local seed loader (`python -m app.models.seed.load`) at RDS through the tunnel. It loads whatever seed files are on your machine, including a local-only `invite_code.json` if you created one.
+
 ### Verify
 
 ```sql
 SELECT DISTINCT ON (section) section, content, created_at
 FROM site_content
-ORDER BY section, created_at DESC, id DESC;
+ORDER BY section, id DESC;
 
 SELECT DISTINCT ON (section, description) section, description, image_path, created_at
 FROM site_image
-ORDER BY section, description, created_at DESC, id DESC;
+ORDER BY section, description, id DESC;
 
 SELECT DISTINCT ON (journey_id) journey_id, content, created_at
 FROM site_journey
-ORDER BY journey_id, created_at DESC, id DESC;
+ORDER BY journey_id, id DESC;
 
 SELECT DISTINCT ON (project_id) project_id, content, created_at
 FROM site_project
-ORDER BY project_id, created_at DESC, id DESC;
+ORDER BY project_id, id DESC;
 ```
 
 Then open `http://<ec2-public-ip>` in a browser — the pages should show your text and images.
@@ -412,10 +457,10 @@ Every image AND video the site shows comes **only** from `site_image` — nothin
 
 ```sql
 INSERT INTO site_image (section, description, image_path)
-SELECT 'personal_statement', 'hero', content->>'heroImage'
+SELECT 'personal_statement', 'hero_desk', content->>'heroImage'
 FROM site_content
 WHERE section = 'personal_statement' AND content ? 'heroImage'
-ORDER BY created_at DESC, id DESC
+ORDER BY id DESC
 LIMIT 1;
 ```
 
@@ -435,15 +480,15 @@ LIMIT 1;
           jsonb_set(content, '{body}', '"<new paragraph text>"')
    FROM site_content
    WHERE section = 'personal_statement'
-   ORDER BY created_at DESC, id DESC
+   ORDER BY id DESC
    LIMIT 1;
    ```
 
    or just write a full fresh object/array like in D.2.
 
-   The same rule covers a **journey detail sheet** (`site_journey`, same `journey_id`) and a **project detail sheet** (`site_project`, same `project_id`) — shapes in D.2 (*Seed the … detail sheets*); the newest row per key wins.
+   The same rule covers a **journey detail sheet** (`site_journey`, same `journey_id`) and a **project detail sheet** (`site_project`, same `project_id`) — shapes in D.2 (*Seed the … detail sheets*); the highest-id row per key wins.
 3. Reload the page in the browser. The frontend fetches live from `GET /api/site-content`, so the change is visible immediately.
-4. Rollback, if needed: `INSERT` the old version again (it is still in the table — `SELECT ... ORDER BY created_at` to find it).
+4. Rollback, if needed: `INSERT` the old version again (it is still in the table — `SELECT ... ORDER BY id DESC` to find it).
 
 ---
 
@@ -479,12 +524,12 @@ This must show the image. If it shows an **AccessDenied** XML, see **D.6**.
 
 ### 3. Put the key in `site_image`
 
-The image is only shown once a `site_image` row points a slot at its key. Open `psql` (D.2) and `INSERT` a **new** row for the `(section, description)` slot — never `UPDATE`; the newest row per slot wins, older rows stay as history:
+The image is only shown once a `site_image` row points a slot at its key. Open `psql` (D.2) and `INSERT` a **new** row for the `(section, description)` slot — never `UPDATE`; the highest-id row per slot wins, older rows stay as history:
 
 ```sql
--- Point the About-Me hero slot at the uploaded key
+-- Point the About-Me desktop hero slot at the uploaded key
 INSERT INTO site_image (section, description, image_path)
-VALUES ('personal_statement', 'hero', 'about/hero.jpg');
+VALUES ('personal_statement', 'hero_desk', 'about/hero.jpg');
 ```
 
 4. Reload the browser. No redeploy.
@@ -497,12 +542,12 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 
 | `section` | JSON type | Fields | Shown on |
 |---|---|---|---|
-| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}`, `resume:{label}` (the PDF is a `site_image` row: `personal_statement` / `resume`), `skills:[{group,colour,items}]` | About-Me / main page |
+| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}`, `resume:{label}` (the PDF is a `site_image` row: `personal_statement` / `resume`), `skills:[{group,items}]` (a legacy `colour` key is ignored) | About-Me / main page |
 | `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | **Education list inside About** (was its own section) |
 | `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | **Certification & Award** section (certs + awards) |
 | `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `image_description` (thumbnail alt; falls back to `label`), `overview` (the card's hover blurb — keep to point form; falls back to the `site_project` paragraph overview), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_image` row | Projects banner (between Certifications and Journey) |
 | `journey` | array | per block: `id`,`year`,`title`,`body` (all req), `image_tag`, `image_description` (alt text); array order = page order | Journey section |
-| `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact section (below Journey) + footer icons |
+| `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact Me section (below Journey; LinkedIn/GitHub icons matched by label) + the footer's links when `footer.links` is absent |
 | `chatroom` | object | `name` — persona display name; whole row optional, falls back to `personal_statement.owner` | Chatroom header |
 | `navbar` | object | `name` beside the brand mark; optional, falls back to `personal_statement.owner` | Site header |
 | `footer` | object | `owner`, `note`, `links`; all optional, year is computed | Site footer |
@@ -511,7 +556,7 @@ VALUES ('personal_statement', 'hero', 'about/hero.jpg');
 
 | column | Meaning |
 |---|---|
-| `journey_id` | the `id` of a block in the `site_content` `journey` array; one detail sheet per block, newest row wins |
+| `journey_id` | the `id` of a block in the `site_content` `journey` array; one detail sheet per block, highest-id row wins |
 | `content` | `body` (req), `heading`, `subtitle`, `highlights:[string]`, `links:[{label,href}]`. In `body`: blank lines → paragraphs, `- `/`* ` lines → bullet list |
 
 Optional per block — a block with no row just has a non-clickable card. Served in `GET /api/site-content` as `journeyDetails: { "<journey_id>": <content> }`.
@@ -520,7 +565,7 @@ Optional per block — a block with no row just has a non-clickable card. Served
 
 | column | Meaning |
 |---|---|
-| `project_id` | the `id` of an item in the `site_content` `projects` array; one pop-up per project, newest row wins |
+| `project_id` | the `id` of an item in the `site_content` `projects` array; one pop-up per project, highest-id row wins |
 | `content` | `overview`, `features:[string]`, `technologies:[string]`, `githubUrl`, `demoUrl`, `videos:[{src_tag,poster_tag,caption}]` — all optional. `src_tag`/`poster_tag` name `site_image` rows (`section` = `projects`); no media path lives here. This `overview` is the **pop-up's paragraph** write-up (blank lines → paragraphs, `- `/`* ` → bullets); the **card's** point-form blurb is the separate `overview` on the `site_content` `projects` row |
 
 Optional per project — a project with no row just has a non-clickable thumbnail. Served in `GET /api/site-content` as `projectDetails: { "<project_id>": <content> }`.
@@ -537,9 +582,10 @@ Known slots the frontend reads today:
 
 | `section` | `description` | Used for |
 |---|---|---|
-| `personal_statement` | `hero` | the About-Me portrait |
-| `qualifications` | `banner` | the Qualifications & Awards band image (optional) |
-| `certifications` | `banner` | the Certifications band image (optional) |
+| `personal_statement` | `hero_desk` | the About-Me photo, framed for wide screens (either hero slot stands in for a missing other) |
+| `personal_statement` | `hero_mob` | the About-Me photo, framed for narrow screens |
+| `personal_statement` | `resume` | the CV PDF behind the button beside the chat icon (no row, no button) |
+| `certifications` | `banner` | the Certification & Award band image (optional) |
 | `projects` | *(each project's `image_tag` / `id`)* | that project's thumbnail in the Projects banner |
 | `projects` | *(each `src_tag` / `poster_tag` in a `site_project` `videos` entry)* | a project pop-up demo clip / its poster still |
 | `journey` | *(each block's `image_tag`)* | the image beside that Journey block (optional) |
@@ -549,26 +595,27 @@ Rules:
 - `image_path` holds the **S3 key only**, e.g. `about/hero.jpg` — never a full URL, never the bytes.
 - Optional `site_content` fields can be omitted entirely rather than set to `null`.
 - Every image and video on the site is a `site_image` row. No media path is ever stored in `site_content` / `site_journey` / `site_project`.
-- Legacy: an old `personal_statement` row may still carry a `heroImage` key. It is **ignored** — migrate it to a `site_image` (`personal_statement`, `hero`) row (see *Migrating an existing environment*).
+- Legacy: an old `personal_statement` row may still carry a `heroImage` key. It is **ignored** — migrate it to a `site_image` (`personal_statement`, `hero_desk`) row (see *Migrating an existing environment*). A `site_image` row with the old single `hero` description is also no longer read.
 
 ---
 
 ## D.6 Troubleshooting Reference
 
-*(SQL is run from the **local machine** via the Part B.2 tunnel + `psql`. URLs are checked in the **local machine's browser**. AWS settings are checked in the **AWS Console**.)*
+*(SQL is run from the **local machine** via the SSH tunnel + `psql` from D.2. URLs are checked in the **local machine's browser**. AWS settings are checked in the **AWS Console**.)*
 
 | Symptom | Likely cause |
 |---|---|
-| Page text is blank / shows "No … content yet." | No row for that `section`, or the newest row's JSON is the wrong shape — check with the D.2 verify query |
-| Edited the DB but the page didn't change | Used `UPDATE` on an old row — its `created_at` didn't move, so a different row is still newest. Always `INSERT` a new row |
-| `<img>` renders but is broken; `src` starts with `/` and has no host | `CDN_BASE` empty — the frontend image was built before `assetUrl.ts` had `<cloudfront-domain>`; fix the line and redeploy the frontend (Part C.2) |
+| Page text is blank / shows "No … content yet." | No row for that `section`, or the current (highest-id) row's JSON is the wrong shape — check with the D.2 verify query |
+| Edited the DB but the page didn't change | Used `UPDATE` on an old row — its `id` didn't change, so a different row still has the highest `id`. Always `INSERT` a new row |
+| `<img>` renders but is broken; `src` starts with `/` and has no host | The frontend image was built without `VITE_CDN_BASE` — CI now fails the build when it is unset, so check the repository Variable, then rebuild and redeploy the frontend (Part C.2) |
 | `<img>` `src` looks doubled (`https://…cloudfront.net/https://…`) | The full URL was stored in `site_image.image_path` instead of the bare key — store `about/hero.jpg`, not the CloudFront URL |
 | Opening the image URL shows `AccessDenied` XML | Hitting the **S3** URL directly (expected — use the `<cloudfront-domain>` URL), or the CloudFront bucket policy / OAC step (D.1 step 7) wasn't completed |
 | Image URL 404s on CloudFront | Key mismatch — the S3 object key must exactly equal `site_image.image_path` (folder, case, extension) |
-| Hero image missing though `site_content` is fine | No `site_image` row for `(section='personal_statement', description='hero')` — seed it (D.2) or run the D.4 step 3 insert |
+| Hero image missing though `site_content` is fine | No `site_image` row for `personal_statement` with description `hero_desk` or `hero_mob` (the old `hero` description is not read) — seed it (D.2) or run the D.4 step 3 insert |
 | Replaced an image, same key, still see the old one | CloudFront cache — create an invalidation, or use a new versioned filename (D.4) |
 | `GET /api/site-content` returns `{"content": {}}` | `site_content` table is empty — seed it (D.2) |
 | `GET /api/site-content` 404 / 500 | Backend not running or can't reach RDS — see Part C.4 |
-| Footer LinkedIn/GitHub icons missing | `contact.links` has no entry whose `label` contains `linkedin` / `github` (case-insensitive) |
+| Contact section LinkedIn/GitHub icons missing | `contact.links` has no entry whose `label` contains `linkedin` / `github` (case-insensitive) |
+| Chatroom says "Consent terms are currently unavailable" | No `consent_policy` row, or its `condition_text` is malformed — see D.2, *Seed the consent policy, invite codes and persona data* |
 
 ---

@@ -56,9 +56,9 @@ services:
     image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-trial}
     container_name: persona_frontend
     ports:
-      # Host 80 -> container 8080. The image is nginx-unprivileged, which runs
-      # as a non-root user and therefore cannot bind port 80 inside the
-      # container. Nothing changes for a visitor: the site is still on :80.
+      # Host 80 -> container 8080. The image runs nginx as the non-root
+      # `nginx` user, which cannot bind port 80 inside the container.
+      # Nothing changes for a visitor: the site is still on :80.
       - "80:8080"
     depends_on:
       - backend

@@ -111,10 +111,10 @@ aws ec2 modify-instance-metadata-options \
 EC2 Console → your instance → **Security** tab → click the security group → **Edit inbound rules**:
 - SSH (22): source = your IP or VPN CIDR only, never `0.0.0.0/0`
 - HTTP (80): source = `0.0.0.0/0` if public-facing
-- Custom TCP (8000), only if you need direct API access outside the reverse proxy — otherwise omit and route everything through port 80
+- Do **not** open 8000. The backend port is not published on the host (`docker-compose.ec2.yml` uses `expose`, not `ports`), so every API call goes through nginx on port 80 and a rule for 8000 would reach nothing
 
 ### Reverse Proxy + TLS (recommended for production)
-If this deployment is public-facing, terminate TLS and route traffic through nginx/Caddy/an AWS ALB in front of both containers rather than exposing raw ports directly. (The included `nginx.conf` — **edited on your local machine, then deployed via the frontend Docker image** — already proxies `/api/` to the backend container; you just need TLS termination in front of it, e.g. via Let's Encrypt/Certbot running **on the EC2 instance**, or an ACM certificate on an ALB configured in the **AWS Console**.)
+If this deployment is public-facing, terminate TLS in front of the frontend container. The included `nginx.conf` — **edited on your local machine, then deployed via the frontend Docker image** — already proxies `/api/` to the backend container, so only TLS termination is missing: e.g. Let's Encrypt/Certbot **on the EC2 instance** (nginx already serves `/.well-known/acme-challenge/` from `/var/www/certbot`, which needs a volume mounted there), or an ACM certificate on an ALB configured in the **AWS Console**. Once HTTPS works end to end, set `ENV=production` in the instance's `.env` — not before: it marks the session cookie `Secure`, and a browser never sends that over plain HTTP (see the note in `docker-compose.ec2.yml`).
 
 ### Automatic Security Patching
 Run in EC2 instance terminal
@@ -137,7 +137,7 @@ restart: unless-stopped
 - `persona_stand/backend`
 - `persona_stand/frontend`
 
-Set **Tag immutability: Enabled**, with `latest` as an **exclusion** pattern if your workflow re-pushes `latest` on every build.
+Set **Tag immutability: Enabled**, with `main` and `trial` as **exclusion** patterns. Both workflows push two tags per build: the commit SHA (unique, so immutability protects it) and the branch name (`main` or `trial`), which is re-pushed on every build and would be rejected by an immutable repository. Neither workflow pushes `latest`.
 
 ### Test EC2 → ECR authentication
 
@@ -165,7 +165,7 @@ This should succeed (confirming pull access). It will *not* let you run AWS mana
 8. Under **Additional configuration**, set an **Initial database name** — if you skip this, you'll need to create a database manually after connecting.
 9. Create database, and wait for it to become available.
 
-Note the **Endpoint** and **Port** shown on the instance's **Connectivity & security** tab — you'll need these for both local development and EC2's `.env`.
+Note the **Endpoint** and **Port** shown on the instance's **Connectivity & security** tab — you'll need these for EC2's `.env` (Part C.1) and for the SSH tunnel used to manage content (Part D.2). Local development does not use RDS; it runs its own database (Part B).
 
 ## A.5 GCP / Vertex AI Setup
 
@@ -246,14 +246,21 @@ exit
 
 # Run in Local machine terminal
 scp -i /path/to/your-key.pem /path/to/gcp-wif-config.json ubuntu@<ec2-public-ip>:~/secrets/gcp-wif-config.json
+
+# Run in EC2 instance terminal
+chmod 644 ~/secrets/gcp-wif-config.json
 ```
+
+The `chmod` matters: the backend container runs as a non-root user (uid 10001), which cannot read a file that only `ubuntu` can. Vertex AI would then fail on every chat turn with a refresh error that never mentions permissions. The file holds no key material, so world-readable is fine.
 
 ## A.6 CI/CD Setup
 
 Go to GitHub
 In each of your **frontend** and **backend** GitHub repositories:
 1. **Settings → Secrets and variables → Actions**.
-2. Add repository variables: `AWS_REGION`, `AWS_ROLE_ARN` (a role trusting GitHub's OIDC provider, scoped to push access on your ECR repos — `AmazonEC2ContainerRegistryPowerUser` or a scoped equivalent, created in the **AWS Console**), `ECR_REPOSITORY`.
-3. Confirm `.github/workflows/deploy.yml` exists in both repos (viewable on GitHub, or in your **local machine**'s clone of each repo) and builds + pushes to ECR on push.
+2. Add repository **variables** (not secrets — nothing here is secret):
+   - both repos: `AWS_REGION`, `AWS_ROLE_ARN` (a role trusting GitHub's OIDC provider, scoped to push access on your ECR repos — `AmazonEC2ContainerRegistryPowerUser` or a scoped equivalent, created in the **AWS Console**), `ECR_REPOSITORY` (`persona_stand/frontend` or `persona_stand/backend`)
+   - frontend repo only: `VITE_CDN_BASE` = `https://<cloudfront-domain>`, no trailing slash. The frontend build **fails** without it (Part D.1)
+3. Confirm `.github/workflows/deploy.yml` exists in both repos (viewable on GitHub, or in your **local machine**'s clone of each repo). It runs on a push to `main` or `trial` and pushes the image tagged with the commit SHA and the branch name; pushes to any other branch build nothing.
 
 ---
