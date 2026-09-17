@@ -1,0 +1,92 @@
+name: Approve major release and promote to ECR
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_run_id:
+        description: 'Successful Combined browser tests run ID from ec2yml main'
+        required: true
+        type: string
+      test_run_attempt:
+        description: 'Successful run attempt number'
+        required: true
+        default: '1'
+        type: string
+      release_version:
+        description: 'Approved major release label, e.g. v0.8.0'
+        required: true
+        type: string
+      approve_major_release:
+        description: 'I approve copying this tested pair to production ECR'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecr-major-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main' && inputs.approve_major_release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    env:
+      TEST_RUN_ID: ${{ inputs.test_run_id }}
+      TEST_RUN_ATTEMPT: ${{ inputs.test_run_attempt }}
+      RELEASE_VERSION: ${{ inputs.release_version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read the exact test run attempt from GitHub
+        run: |
+          [[ "$TEST_RUN_ID" =~ ^[0-9]+$ && "$TEST_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID/attempts/$TEST_RUN_ATTEMPT" > test-run.json
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.test_run_id }}
+          name: combined-test-results-${{ inputs.test_run_id }}-${{ inputs.test_run_attempt }}
+          path: evidence
+      - name: Verify successful test provenance
+        run: node scripts/promotion.mjs --check
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PROMOTION_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - name: Install registry copy tool
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Copy tested manifests and layers without rebuilding
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: node scripts/promotion.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: promoted-release-${{ inputs.release_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            promotion.json
+            release-images.env
+            test-run.json
+            evidence/selected-release.json
+            evidence/test-results/release-result.json
+          retention-days: 90
+          if-no-files-found: error

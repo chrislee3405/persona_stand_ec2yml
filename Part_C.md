@@ -1,5 +1,27 @@
 # Part C — Deployment & Ongoing Operations 🔁
 
+## Before deployment: download the approved release
+
+**Where: your browser, GitHub.** If you have not promoted a release yet, follow [Part A.6.10](Part_A.md#a610-approve-and-promote-a-major-release) first.
+
+1. Open `persona_stand_ec2yml` on GitHub and click the **Actions** tab.
+2. In the left sidebar, click **Approve major release and promote to ECR**.
+3. Click the successful run for your approved release. Confirm its `promote` job has a green checkmark. If it failed, click the job name and expand the failed step; do not use files from a failed run.
+4. Click **Summary** in the left sidebar. Scroll down to **Artifacts**.
+5. Click the artifact named `promoted-release-VERSION-RUN_ID-ATTEMPT`. This downloads a ZIP to your computer; it does not send anything to EC2.
+6. **Windows File Explorer:** open **Downloads**, right-click the ZIP, click **Extract All…**, choose a destination and click **Extract**. Open the extracted folder and confirm it contains `promotion.json` and `release-images.env`. Keep the rest of the evidence too.
+7. Open `promotion.json` in your text editor to check the release version, source commits and image pair. Close it without editing. Transfer the files only after `~/app` exists on EC2 (created in C.1 below).
+
+**Where: your local PowerShell terminal, after extraction and EC2 folder creation.** Run the following, replacing the paths, login name and IP with your actual values. Amazon Linux usually uses `ec2-user`; use your existing SSH login name if different.
+
+```powershell
+scp -i "C:/path/to/your-key.pem" "C:/path/to/extracted/promotion.json" "C:/path/to/extracted/release-images.env" ec2-user@<ec2-public-ip>:~/app/
+```
+
+Press **Enter** to run it. If this is your first SSH connection, verify the host fingerprint against your trusted connection information before accepting it. A completed transfer returns to the terminal prompt. In your **EC2 SSH terminal**, run `ls -l ~/app/promotion.json ~/app/release-images.env` to confirm both files arrived. SCP is a terminal command, not a button on GitHub or AWS.
+
+For an existing server, use your normal SSH connection. If you normally connect through AWS's browser console, click **EC2 → Instances**, select your instance's checkbox, click **Connect**, select **EC2 Instance Connect**, verify the username, then click **Connect**. This option requires the instance's existing networking and connection permissions to support it; it does not replace the file transfer above.
+
 ## C.1 First Deployment to a New EC2 Instance
 Run in EC2 instance terminal
 ```bash
@@ -10,12 +32,10 @@ nano .env
 
 Run in EC2 instance terminal — paste into the `.env` file you just opened with `nano`
 ```env
-AWS_ACCOUNT_ID=<your-12-digit-account-id>
 DATABASE_URL=postgresql://<master-username>:<master-password>@<rds-endpoint>:5432/<db-name>
 SESSION_SECRET_KEY=<long-random-string — see below>
 GCP_PROJECT_ID=<project-id-or-number-matching-what-your-code-expects>
 AWS_REGION=ap-southeast-2
-IMAGE_TAG=main
 ```
 Save with `Ctrl+O → Enter → Ctrl+X`.
 
@@ -28,7 +48,11 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 This key signs the session cookie, which is what carries a visitor's consent record and invite-code verification. **Changing it logs every visitor out** — existing cookies stop validating, so consent has to be given again and any verified invite session is dropped. Set it once and keep it; do not regenerate it on each deploy.
 
-⚠️ `IMAGE_TAG` selects which branch's image this instance pulls from ECR — both the backend and frontend workflows now push a `main` tag and a `trial` tag (in addition to the per-commit SHA tag) instead of `latest`. Set it to `main` on your production instance and `trial` on a trial/staging instance. **If omitted, `docker-compose.ec2.yml` falls back to `trial`** — so on a production instance, set it explicitly.
+Before deploying, follow Part A.6.10 to approve and promote a successful GHCR pair. Download the artifact from that **successful promotion run**, not from the combined-test run. Transfer its `promotion.json` and `release-images.env` to `~/app` on EC2 (for example using your usual SCP/SFTP client). Keep the original artifact as release evidence. Do not edit these generated files or accept receipts from an untrusted source.
+
+`release-images.env` contains ECR_ACCOUNT_ID, AWS_REGION, FRONTEND_DIGEST and BACKEND_DIGEST. Production Compose constructs only ECR references. Remove obsolete IMAGE_TAG / FRONTEND_IMAGE / BACKEND_IMAGE settings from an existing `.env`; they no longer select images. Keep database/session/GCP secrets in `.env`.
+
+The deployment script needs Python 3 and Docker Compose with `up --wait`. If Python is missing on Amazon Linux, install it with `sudo dnf install -y python3`. The existing EC2 instance role supplies ECR read access; no GHCR login is needed.
 
 ⚠️ `DATABASE_URL` here must point **directly at the RDS endpoint on port 5432** — not the local compose database from Part B (`db:5432`) or an SSH tunnel address. Omitting this variable entirely stops the backend at startup with `RuntimeError: DATABASE_URL is not set`.
 
@@ -39,27 +63,32 @@ This key signs the session cookie, which is what carries a visitor's consent rec
 Run in EC2 instance terminal
 ```bash
 aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com # for every 12 hours restart
-docker compose -f docker-compose.ec2.yml pull
-docker compose -f docker-compose.ec2.yml up -d
+python3 scripts/deploy_release.py promotion.json
 ```
 
 Run in EC2 instance terminal
 ```bash
 docker ps -a
-docker compose -f docker-compose.ec2.yml logs -f
+docker compose --env-file .env --env-file release-images.env -f docker-compose.ec2.yml logs -f
 ```
 The app should be reachable at `http://<ec2-public-ip>` — **Where: your local machine's browser**.
 
 ## C.2 Every Redeploy
-# main steps: have update images in ECR > connect to EC2 terminal > go to app folder > update .env > login with CLI "aws ecr get-..." > pull images > docker up
+For a minor update, stop after the combined tests: nothing needs changing on EC2. For an approved major release:
+
+1. Run the same combined workflow for the intended GHCR pair on ec2yml main.
+2. Manually approve and run promotion using that successful run ID and attempt (Part A.6.10).
+3. Follow **Before deployment: download the approved release** above: click the successful promotion run → **Summary** → its artifact name, extract the ZIP, verify the release, then use the local SCP command to transfer `promotion.json` and `release-images.env` to `~/app`.
+4. Review database migration compatibility and the one-off steps below before deployment. Back up production data as appropriate for the migration.
+5. Run the commands below. The script validates the receipt, pulls only ECR digests, starts both services, verifies their actual image references, and writes `deployment-records/TIMESTAMP.json` with the full source-to-deployment chain.
+6. Save that deployment record alongside the original promotion/test evidence off the EC2 instance. Open the live site, check consent and chat, and inspect logs. Running containers alone do not establish full application health.
 
 Run in EC2 instance terminal
 ```bash
 cd ~/app
 git pull
-# login with CLI "aws ecr get-..."
-docker compose -f docker-compose.ec2.yml pull
-docker compose -f docker-compose.ec2.yml up -d
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com
+python3 scripts/deploy_release.py promotion.json
 docker ps -a
 ```
 
@@ -100,7 +129,7 @@ the legacy form (rendering with no header).
 
 Run in EC2 instance terminal — check first, and skip if it already says `jsonb`
 ```bash
-docker compose -f docker-compose.ec2.yml exec backend python - <<'PY'
+docker compose --env-file .env --env-file release-images.env -f docker-compose.ec2.yml exec backend python - <<'PY'
 import asyncio, os, asyncpg
 async def main():
     url = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
@@ -133,8 +162,8 @@ Variables.
 been replaced by `GET /api/chatroom_initialize`, and `POST /api/code` no longer
 returns the code. A new frontend against an old backend gets a 404 on load and
 shows the consent terms as unavailable; an old frontend against a new backend
-does the same. Both images share `IMAGE_TAG`, so the routine above already
-deploys them as a pair — just do not pull one without the other.
+does the same. Select both image references from one successful combined-test
+receipt so the routine above deploys the compatible pair.
 
 **6. Add consent withdrawal to `consent_record`.** Visitors can now withdraw
 consent ("Disagree with consent" under the chatroom). A withdrawn record is
@@ -183,11 +212,11 @@ table that already exists:
 ```sql
 BEGIN;
 DROP INDEX IF EXISTS ix_site_content_section_created_at;
-DROP INDEX IF EXISTS ix_site_image_section_description_created_at;
+DROP INDEX IF EXISTS ix_site_media_section_description_created_at;
 DROP INDEX IF EXISTS ix_site_journey_journey_id_created_at;
 DROP INDEX IF EXISTS ix_site_project_project_id_created_at;
 CREATE INDEX IF NOT EXISTS ix_site_content_section_id_desc ON site_content (section, id DESC);
-CREATE INDEX IF NOT EXISTS ix_site_image_section_description_id_desc ON site_image (section, description, id DESC);
+CREATE INDEX IF NOT EXISTS ix_site_media_section_description_id_desc ON site_media (section, description, id DESC);
 CREATE INDEX IF NOT EXISTS ix_site_journey_journey_id_id_desc ON site_journey (journey_id, id DESC);
 CREATE INDEX IF NOT EXISTS ix_site_project_project_id_id_desc ON site_project (project_id, id DESC);
 COMMIT;
@@ -214,7 +243,7 @@ DROP INDEX IF EXISTS ix_doc_reference_id;
 DROP INDEX IF EXISTS ix_personality_reference_id;
 DROP INDEX IF EXISTS ix_scenario_reference_id;
 DROP INDEX IF EXISTS ix_site_content_id;
-DROP INDEX IF EXISTS ix_site_image_id;
+DROP INDEX IF EXISTS ix_site_media_id;
 DROP INDEX IF EXISTS ix_site_journey_id;
 DROP INDEX IF EXISTS ix_site_project_id;
 COMMIT;
@@ -236,19 +265,15 @@ startup schema check.
 
 ### Rolling back a bad deploy
 
-Both workflows tag every image with the commit SHA as well as the branch
-name, so going back is a one-liner — pin `IMAGE_TAG` to the previous SHA
-instead of `main`:
+Retrieve a previous successful **promotion.json** and its `release-images.env`, confirm that the previous application pair remains compatible with the current database schema, and copy both to EC2. Log in to ECR, then run `python3 scripts/deploy_release.py promotion.json`. This records the rollback as another deployment of the original tested/promoted digests. Never rebuild old source to make a rollback image.
 
 Run in EC2 instance terminal
 ```bash
-aws ecr describe-images --repository-name persona_stand/backend --region ap-southeast-2   --query 'sort_by(imageDetails,&imagePushedAt)[-5:].imageTags' --output text
-IMAGE_TAG=<previous-sha> docker compose -f docker-compose.ec2.yml up -d
+python3 scripts/deploy_release.py promotion.json
 ```
 
-Both images share the tag, so this rolls the frontend and backend back
-together. Put `IMAGE_TAG` back to `main` in `.env` once a fixed image has
-been pushed.
+This restores the selected pair. A subsequent release should use another
+successfully tested pair of immutable image references.
 
 ⚠️ Rolling back **across** the release described above needs the compose file
 rolled back with it (`git checkout <prev> -- docker-compose.ec2.yml`), because
@@ -281,10 +306,10 @@ the visitor's later re-agreement, if any, is a separate row and survives.
 | Symptom | Likely cause |
 |---|---|
 | `docker login` fails | ECR region mismatch, expired/missing AWS credentials, or missing IAM permissions |
-| `pull` fails with "not found" | Image tag doesn't exist in ECR, wrong `AWS_ACCOUNT_ID` in `.env`, or `IMAGE_TAG` in `.env` doesn't match a branch that's actually been pushed (`main`/`trial`) |
-| Frontend can't reach backend | The backend container is not running — nginx proxies `/api/` to it by service name, so check `docker compose -f docker-compose.ec2.yml ps` and the backend's logs first |
+| `pull` fails with "not found" | Check the ECR digests from the successful promotion artifact, ECR retention and instance-role permissions |
+| Frontend can't reach backend | The backend container is not running — nginx proxies `/api/` to it by service name, so check `docker compose --env-file .env --env-file release-images.env -f docker-compose.ec2.yml ps` and the backend's logs first |
 | Backend restarts forever, `KeyError: 'SESSION_SECRET_KEY'` in the log | `SESSION_SECRET_KEY` missing from `.env` on the instance — see C.1 |
-| Deployed but the site shows the wrong version | `IMAGE_TAG` unset in `.env`, so the compose file fell back to `trial` — set it to `main` |
+| Deployed but the site shows the wrong version | Confirm both image references match the intended successful test receipt, then pull and recreate the containers |
 | Backend container unhealthy, `curl: not found` in health log | Base image lacks `curl` — install it in the Dockerfile's runtime stage (edited on **local machine**, rebuilt via GitHub Actions), or switch the health check to `wget` |
 | Frontend unhealthy, `wget: can't connect... Connection refused` | nginx listens on **8080** inside the container (IPv4 and IPv6), not 80 — a health check or `curl` against `:80` inside the container finds nothing. The image's own health check targets `127.0.0.1:8080` |
 | Backend exits at startup with `RuntimeError: DATABASE_URL is not set` | `DATABASE_URL` missing from `.env` on the instance (the compose file reads it from there) |
@@ -294,4 +319,11 @@ the visitor's later re-agreement, if any, is a separate row and survives.
 | `403 PERMISSION_DENIED: iam.serviceAccounts.getAccessToken` despite roles being granted in console | The AWS role ARN in the GCP IAM binding doesn't match the EC2 instance's *actual* attached role — verify via instance metadata (EC2 via SSH), not by typing/guessing |
 | Can't load app in browser | Security group isn't allowing inbound HTTP on port 80 — check in **AWS Console (browser)** |
 | Accidentally ran the wrong `docker-compose.yml` on EC2 | `docker system prune -f` **— Where: EC2 instance (via SSH)**, then redeploy correctly |
-| EC2 container status unhealthy & Inspect EC2 debug print | run "docker compose -f docker-compose.ec2.yml logs --tail=100 backend" to inspect the debut log|
+| EC2 container status unhealthy & Inspect EC2 debug print | run "docker compose --env-file .env --env-file release-images.env -f docker-compose.ec2.yml logs --tail=100 backend" to inspect the debut log|
+# Media-table upgrade (17 September 2026)
+
+Before starting the renamed backend against an existing database, stop old
+backend instances and run `persona_stand_back/scripts/migrations/20260917_site_media.sql`.
+See that repository's migration README for the deployment sequence. `create_all`
+cannot rename `site_image` to `site_media` or `image_path` to `media_path`.
+The migration preserves all existing rows and tag relationships.

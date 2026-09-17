@@ -1,5 +1,91 @@
 
 ---
+# version 0.7.1
+
+## Frontend
+
+- independent automated tests with Vitest, React Testing Library and jsdom
+    - 37 cases, controlled API responses, no backend or cloud credentials needed
+    - consent agreement / withdrawal, unavailable terms and changed policy
+    - session initialisation, invite verification and revoked-invite guest fallback
+    - rapid message grouping, queued conversationId reuse and recovery after a failed request
+    - rejected / withheld message status, chat persistence and corrupt / unavailable storage
+    - site content loading, empty / error states and retry
+- npm test / test:watch / test:ci added, CI writes a JUnit report
+- test configuration included in TypeScript checks, test files and reports excluded from the Docker build context
+- Docker build Node 20 -> Node 22, matches the CI and test dependency requirements
+
+## Backend
+
+- pytest unit and API integration tests
+    - 51 cases, real FastAPI, PostgreSQL and Presidio, only Gemini replaced with predictable test replies
+    - consent enforcement / withdrawal / policy changes, conversation ownership and invite verification / revocation
+    - message length / privacy gates, daily limits and pending-slot cleanup
+    - generation deadlines, failed-turn history exclusion and recovery on the next message
+    - ordered conversation storage, content revision selection and validation
+- Gemini client created lazily on the first real model call
+    - importing the application no longer needs Google credentials, the production client is still reused
+    - tests reject attempts to create a real Gemini client
+- fictional seed data and a test-only browser-test entrypoint
+    - mounts into the selected backend image, runs the real API with fake Gemini
+    - tests and the entrypoint excluded from production images, no production fake-model flag
+- requirements-dev.txt / pytest.ini added, CI saves a JUnit report
+
+## Database
+
+- tests use a separate disposable PostgreSQL database named persona_test
+    - reset guard checks the database name and allowed local / test-container host before clearing data
+    - test bootstrap ignores the normal DATABASE_URL and local .env
+    - each API integration test resets and reloads fictional content, no owner seed data used
+- combined browser tests start their own unexposed database in temporary memory
+    - each run owns a separate Compose project, containers and temporary data cleaned up afterwards
+
+## Infrastructure
+
+- frontend and backend workflows test every branch push and pull request
+    - frontend lint / tests / TypeScript / build, backend unit and PostgreSQL API tests
+    - every passing branch push publishes a commit-specific GHCR image, including dev
+    - PR events test only, existing commit images reused on reruns instead of rebuilding
+    - image.json records immutable digest, full source SHA, repository and publication run
+- combined browser tests owned by persona_stand_ec2yml
+    - release-versions.json selects independent frontend / backend GHCR digests and full commit SHAs
+    - source / revision labels verified, backend test support checked out at the matching commit
+    - one workflow for minor and major updates; repositories can be pushed in either order
+    - 5 Playwright Chromium journeys through real nginx / React / FastAPI / PostgreSQL
+    - portfolio navigation, consent, guest / invite chat, privacy rejection and model-failure recovery
+    - temporary database, fake Gemini and blocked external media; no running EC2 or ECR needed
+    - result records pair, source SHAs, coordinator commit, GitHub run ID / attempt, reports and logs
+- major release promotion separated from testing
+    - minor updates remain in GHCR; no automatic ECR publishing from application branches
+    - manual approval selects a successful combined-test run from protected ec2yml main
+    - checks exact workflow / run attempt / receipt before obtaining AWS credentials
+    - skopeo copies the tested GHCR manifests and layers into ECR without rebuilding
+    - verifies unchanged digests, saves promotion.json and ECR release-images.env
+    - immutable ECR release tags, restricted production-environment IAM role and optional environment reviewers
+- production deployment uses only promoted ECR digests
+    - deploy_release.py validates source / GHCR / test / ECR evidence, starts the selected pair
+    - verifies running container image references, saves deployment-records with the full release chain
+    - production Compose constructs ECR-only references; rollback uses a previous promotion receipt
+    - no automatic EC2 deployment from build, test or promotion workflows
+- permissions and documentation
+    - GHCR packages-write for publishers, packages-read for combined tests / promotion
+    - old combined-test ECR role removed from workflows, BACKEND_READ_TOKEN retained for private source
+    - IAM copy policy / trust templates, Part_A first-time setup and old pre-step-8 cleanup instructions
+    - Part_C promotion / deployment / rollback steps, TESTING guides and README architecture updated
+    - file execution sequence and coordinated API-change example, settings lookup with each value source / destination
+    - local development builds distinguished from immutable CI release candidates
+    - Part_A / Part_C name the buttons, fields and confirmation controls for setup, cleanup, promotion and artifact download
+    - browser actions separated from local / EC2 terminal commands, release file transfer included
+- release validation and promotion tests cover immutable selections, trusted evidence, failed / substituted receipts, digest-preserving copy and retry / tag-conflict handling
+    - 25 checks passed locally for this update: release / promotion 10, deployment validation 4, publisher safeguards 6, browser journeys 5
+    - browser checks reused existing local images; cloud GHCR / ECR publication and EC2 deployment still require the documented account setup
+
+---
+# version 0.7.0
+
+## All update from 0.6.1 to 0.6.4
+
+---
 # version 0.6.4
 
 ## Frontend
@@ -64,7 +150,7 @@
 
 - consent_record.withdrawn_at
     - unique (session_id, policy_version) constraint replaced by a partial unique index over active records
-- site_content / site_image / site_journey / site_project indexes (key, created_at) -> (key, id DESC)
+- site_content / site_media / site_journey / site_project indexes (key, created_at) -> (key, id DESC)
 - personality_reference column cluture_background -> culture_background
 - index=True dropped from 12 primary keys, it created a duplicate ix_<table>_id next to the primary key index
 - message.selected_scenario / selected_document documented as owner review metadata

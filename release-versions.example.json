@@ -1,0 +1,10 @@
+{
+  "frontend": {
+    "image": "ghcr.io/chrislee3405/persona_stand_front@sha256:REPLACE_WITH_64_CHARACTER_DIGEST",
+    "revision": "REPLACE_WITH_FRONTEND_40_CHARACTER_COMMIT"
+  },
+  "backend": {
+    "image": "ghcr.io/chrislee3405/persona_stand_back@sha256:REPLACE_WITH_64_CHARACTER_DIGEST",
+    "revision": "REPLACE_WITH_BACKEND_40_CHARACTER_COMMIT"
+  }
+}

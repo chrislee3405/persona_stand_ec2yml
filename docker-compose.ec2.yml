@@ -1,6 +1,8 @@
 services:
   backend:
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/backend:${IMAGE_TAG:-main}
+    # Independent repositories have different commits. Select the exact pair
+    # from the successful promotion artifact, never a shared moving tag.
+    image: ${ECR_ACCOUNT_ID:?Set ECR_ACCOUNT_ID}.dkr.ecr.${AWS_REGION:?Set AWS_REGION}.amazonaws.com/persona_stand/backend@${BACKEND_DIGEST:?Set promoted BACKEND_DIGEST}
     container_name: persona_backend
     # `expose`, not `ports`. Publishing 8000 bound it to 0.0.0.0 on the EC2
     # host, so the only thing between the internet and an unauthenticated
@@ -49,11 +51,11 @@ services:
         max-file: "3"
 
   frontend:
-    # Prebuilt in CI and pushed to ECR (same as backend). The CloudFront
+    # Built in GHCR, browser-tested, then copied unchanged to ECR (same as backend). The CloudFront
     # base URL is baked in at BUILD time from the VITE_CDN_BASE repository
     # variable -- it reaches the JS bundle, index.html and nginx's CSP from
     # that one value -- so there is nothing to configure here.
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-2.amazonaws.com/persona_stand/frontend:${IMAGE_TAG:-main}
+    image: ${ECR_ACCOUNT_ID:?Set ECR_ACCOUNT_ID}.dkr.ecr.${AWS_REGION:?Set AWS_REGION}.amazonaws.com/persona_stand/frontend@${FRONTEND_DIGEST:?Set promoted FRONTEND_DIGEST}
     container_name: persona_frontend
     ports:
       # Host 80 -> container 8080. The image runs nginx as the non-root

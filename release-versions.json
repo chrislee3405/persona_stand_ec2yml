@@ -1,0 +1,10 @@
+{
+  "frontend": {
+    "image": "ghcr.io/chrislee3405/persona_stand_front@sha256:543336c991802864a6c0d9ef67158b4ab425c0d71343af19b6365b2587a41d7d",
+  "revision": "148460538fbe45e7889cb89c061d8e692352a339"
+  },
+  "backend": {
+    "image": "ghcr.io/chrislee3405/persona_stand_back@sha256:b32b176c129237f13b63ecea76bbc319e5e64cf3754293f362de6999f0fba178",
+    "revision": "3aa1b8f477145e9e47ae85636820aaa3e6912646"
+  }
+}

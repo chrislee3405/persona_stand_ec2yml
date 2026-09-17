@@ -5,7 +5,19 @@ This file contains the deployment notes and setup procedure for a Persona Stand 
 - **Containers:** Docker / Docker Compose
 - **AWS:** EC2, ECR, RDS, IAM, S3 + CloudFront (images and video)
 - **GCP:** Vertex AI + Workload Identity Federation
-- **CI/CD:** GitHub Actions with AWS OIDC
+- **CI/CD:** GitHub Actions, GHCR for tested builds, AWS OIDC for approved ECR promotion
+
+## Automated tests and release coordination
+
+Start with [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup)
+for the step-by-step first-time GitHub and AWS testing setup.
+See [TESTING.md](TESTING.md) for independent frontend/backend checks and the
+combined Playwright suite owned by this repository. Select exact frontend and
+backend image digests in `release-versions.json` (start from the example), test
+the pair with one workflow for minor and major updates. All passing branch
+builds publish to GHCR. Minor updates stay there; approved major releases copy
+the tested images unchanged to ECR. EC2 pulls only promoted ECR digests using
+`promotion.json`; see [Part C](Part_C.md). No image is rebuilt after testing.
 
 > **Important:** Replace every value surrounded by `<...>` with your own value. Do not commit passwords, private keys, AWS access keys, Google service-account private keys, or database credentials.
 
@@ -16,35 +28,14 @@ This file contains the deployment notes and setup procedure for a Persona Stand 
 The intended production architecture is:
 
 ```text
-Developer
-   │
-   ├── Git push
-   ▼
-GitHub
-   │
-   ▼
-GitHub Actions
-   │
-   │ OIDC
-   ▼
-AWS IAM Role
-   │
-   ▼
-Amazon ECR
-   │
-   │ Docker image pull
-   ▼
-EC2
-   │
-   ├── Frontend container
-   └── Backend container
-          │
-          ├── Amazon RDS
-          └── Google Vertex AI
-                 ▲
-                 │ Workload Identity Federation
-                 │
-              AWS IAM Role
+Application branch push
+   -> independent tests -> commit-specific GHCR images
+   -> ec2yml selects exact frontend/backend digests and source commits
+   -> combined Playwright tests on a GitHub-hosted runner
+       -> minor: retain GHCR images and test evidence
+       -> approved major: copy unchanged images to ECR using AWS OIDC
+           -> EC2 pulls promoted ECR digests and records deployment
+               -> frontend -> backend -> RDS / Vertex AI
 ```
 
 A visitor's request flows like this:
@@ -95,7 +86,7 @@ The frontend repository contains:
 - Frontend Docker configuration
 - Its own GitHub Actions workflow
 
-The frontend GitHub Actions workflow builds the frontend Docker image and pushes it to Amazon ECR.
+The frontend GitHub Actions workflow builds the frontend Docker image and publishes it to GHCR after independent tests pass.
 
 ---
 
@@ -123,7 +114,7 @@ The backend repository contains:
 
 The local `docker-compose.yml` is intended for development on the local device. It is separate from the production EC2 Compose configuration.
 
-The backend GitHub Actions workflow builds the backend Docker image and pushes it to Amazon ECR.
+The backend GitHub Actions workflow builds the backend Docker image and publishes it to GHCR after independent tests pass.
 
 ---
 
@@ -131,7 +122,15 @@ The backend GitHub Actions workflow builds the backend Docker image and pushes i
 
 ```text
 persona_stand_ec2yml/
-├── docker-compose.ec2.yml
+├── .github/workflows/integration.yml  combined tests for every selected pair
+├── .github/workflows/promote.yml      approved GHCR-to-ECR copy
+├── release-versions.example.json     template for your image selection
+├── docker-compose.test.yml           isolated browser-test services
+├── docker-compose.ec2.yml            production ECR services
+├── scripts/                          selection, verification, testing, promotion and deployment
+├── tests/e2e/                        Playwright browser journeys
+├── iam/                              promotion policy and trust templates
+├── TESTING.md                        test architecture and release evidence
 ├── README.md               (this file: architecture + Part 0)
 ├── Part_A.md               first-time infrastructure setup
 ├── Part_B.md               local development workflow
@@ -141,7 +140,7 @@ persona_stand_ec2yml/
 └── version_log.md
 ```
 
-This repository contains the Docker Compose configuration used to deploy the application on AWS EC2, and the setup manual.
+This repository coordinates combined testing, approved image promotion and EC2 deployment, and contains the setup manual.
 
 `docker-compose.ec2.yml` pulls the pre-built frontend and backend images from Amazon ECR and runs them on the EC2 instance.
 
@@ -152,62 +151,22 @@ The EC2 repository is a deployment/configuration repository rather than an appli
 ## 2.4 Repository and Deployment Relationship
 
 ```text
-persona_stand_front
-        │
-        │ GitHub Actions
-        ▼
-      Amazon ECR
-   frontend image
-        │
-        │
-        ├──────────────────┐
-                           │
-persona_stand_back         │
-        │                  │
-        │ GitHub Actions   │
-        ▼                  │
-      Amazon ECR           │
-   backend image            │
-                           │
-                           ▼
-              persona_stand_ec2yml
-                 docker-compose.ec2.yml
-                           │
-                           ▼
-                         EC2
-                    ┌─────────────┐
-                    │  Frontend   │
-                    │  Backend    │
-                    └─────────────┘
+front deploy.yml -> checks -> GHCR frontend digest ---+
+                                                    +-> ec2yml integration.yml
+back deploy.yml  -> tests  -> GHCR backend digest ----+     -> Playwright result
+                                                          -> minor: stop here
+                                                          -> approved major:
+                                                             promote.yml -> ECR
+                                                             deploy_release.py -> EC2
 ```
 
-There are two independent GitHub Actions workflows:
-
-```text
-persona_stand_front/.github/workflows/deploy.yml
-        ↓
-Build frontend image
-        ↓
-Push frontend image to ECR
-```
-
-and:
-
-```text
-persona_stand_back/.github/workflows/deploy.yml
-        ↓
-Build backend image
-        ↓
-Push backend image to ECR
-```
-
-The third repository does not build the application images. It provides the EC2 deployment configuration that pulls the frontend and backend images from ECR and runs them on the EC2 instance.
+Application `scripts/publish_image.py` builds each new commit image once. ec2yml never rebuilds application images: it tests selected GHCR digests, copies the successful pair unchanged to ECR after approval, then records EC2 deployment. See [TESTING.md](TESTING.md) for file responsibilities and [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) for permissions and setup.
 
 ---
 
 # 3. Manual Structure
 
-The list showing the overall menu of the setup guildence and onging development procedures
+Use these guides in order: Part A for first-time setup, Part B for local development, Part C for approved production releases, and Part D for content/media operations. For the GHCR migration, start at Part A.6; cleanup of the previous configuration is in Part A.6.12.
 
 ```text
 Part 0 - Local Machine Prerequisites—
@@ -281,17 +240,17 @@ python --version   # or python3 --version
 pip --version
 ```
 
-### 0.3 Node.js 20+
+### 0.3 Node.js 22.12+
 
-Match the frontend's Docker image (`node:20-alpine`).
+Use Node.js 22 (at least 22.12), matching the frontend's Docker image (`node:22-alpine`) and automated-test runtime.
 
 Run in Local machine terminal
 - **All platforms (recommended):** install via [nvm](https://github.com/nvm-sh/nvm) (macOS/Linux) or [nvm-windows](https://github.com/coreybutler/nvm-windows):
 ```bash
-nvm install 20
-nvm use 20
+nvm install 22
+nvm use 22
 ```
-- **Or download directly:** https://nodejs.org/ (choose the LTS 20.x installer)
+- **Or download directly:** https://nodejs.org/ (choose the 22.x installer)
 
 Run in Local machine terminal
 ```bash

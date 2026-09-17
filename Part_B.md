@@ -4,6 +4,8 @@ Everything in this part runs on **local machine**, except where explicitly noted
 
 The local stack is self-contained: `persona_stand_back/docker-compose.yml` runs its own Postgres, the backend and the frontend. **Nothing in this part connects to production.** The SSH tunnel to RDS is only for managing production content — see Part D.
 
+For independent and combined automated-test commands, see the frontend/backend `TESTING.md` files and this repository's [TESTING.md](TESTING.md). Local Docker builds are development rehearsals. Release candidates are built once in application CI, published to GHCR, then selected and tested by digest in ec2yml. Follow [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) to enable that flow and [Part C](Part_C.md) to promote/deploy an approved pair without rebuilding.
+
 ## B.1 Repository & Dependencies
 
 Run in Local machine terminal — the three repositories must sit side by side, because the backend's `docker-compose.yml` builds the frontend from `../persona_stand_front`
@@ -74,7 +76,7 @@ This writes `application_default_credentials.json` — to `~/.config/gcloud/` on
 
 Run in Local machine terminal, once the stack is up (B.4) — this runs *inside* the backend container, using the same client and model the app uses
 ```bash
-docker compose exec backend python -c "from app.constants import DEFAULT_MODEL; from app.services.ai.gemini_service import _client; print(_client.models.generate_content(model=DEFAULT_MODEL, contents='Say hello').text)"
+docker compose exec backend python -c "from app.constants import DEFAULT_MODEL; from app.services.ai.gemini_service import _get_client; print(_get_client().models.generate_content(model=DEFAULT_MODEL, contents='Say hello').text)"
 ```
 
 A reply means credentials, project and model access all work.

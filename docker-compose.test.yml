@@ -1,0 +1,52 @@
+# CI always selects GHCR images by digest; no ECR or AWS service is used.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: persona_test
+      POSTGRES_USER: persona_test
+      POSTGRES_PASSWORD: persona_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U persona_test -d persona_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    image: ${TEST_BACKEND_IMAGE:?Select TEST_BACKEND_IMAGE}
+    environment:
+      TEST_DATABASE_URL: postgresql://persona_test:persona_test@db:5432/persona_test
+      PYTHONPATH: /test-support:/app
+      PYTHONDONTWRITEBYTECODE: "1"
+      ENV: development
+    volumes:
+      - type: bind
+        source: ${BACKEND_TESTS_PATH:-../persona_stand_back/tests}
+        target: /test-support/tests
+        read_only: true
+    command: ["uvicorn", "tests.support.e2e_app:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Initialization queries the real test database and must return terms.
+      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://localhost:8000/api/chatroom_initialize')); assert d['consent']['conditionTerms']"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  frontend:
+    image: ${TEST_FRONTEND_IMAGE:?Select TEST_FRONTEND_IMAGE}
+    ports:
+      - "127.0.0.1:${E2E_PORT:-18080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

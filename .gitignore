@@ -13,3 +13,18 @@ secrets/
 gcp-wif-config.json
 *.pem
 *.key
+
+# Test dependencies, downloaded source, and generated evidence.
+node_modules/
+backend-source/
+playwright-report/
+test-results/
+selected-release.json
+release-images.env
+
+promotion.json
+test-run.json
+evidence/
+deployment-records/
+
+__pycache__/
