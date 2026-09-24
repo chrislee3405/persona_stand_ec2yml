@@ -14,23 +14,20 @@ services:
       - "8000"
     environment:
       - PYTHONUNBUFFERED=1
-      # DEFAULTS TO development ON PURPOSE, and must stay that way until TLS
-      # is terminated in front of the frontend container.
+      # INFO, whatever else is going on. DEBUG makes the reply pipeline write
+      # every visitor's full prompt, history and model response to this
+      # container's stdout. (This used to be tied to ENV=production, which
+      # could not be set before TLS -- see app/runtime_settings.py.)
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # false UNTIL THE SITE IS HTTPS END TO END, then true in this
+      # instance's .env (Part A, "HTTPS with Let's Encrypt", last step).
       #
-      # ENV=production does two things at once. The wanted one: it raises the
-      # log level to INFO, which stops the reply pipeline writing every
-      # visitor's full prompt, history and model response to this container's
-      # stdout. The one that bites: app/middleware.py passes it as
-      # `https_only` on the session cookie, and a browser NEVER sends a Secure
-      # cookie over plain http:// -- so switching this on before there is TLS
-      # empties every visitor's session on every request. Consent stops
-      # sticking, every chat turn returns 403, and every message opens a new
-      # conversation. The static site keeps working, which makes it look like
-      # a chat bug rather than a config change.
-      #
-      # SO: terminate TLS, then set ENV=production in this instance's .env.
-      # Both halves land together, which is the point.
-      - ENV=${ENV:-development}
+      # A browser NEVER sends a Secure cookie over plain http://, so turning
+      # this on early empties every visitor's session on every request.
+      # Consent stops sticking, every chat turn returns 403, and every message
+      # opens a new conversation. The static site keeps working, which makes
+      # it look like a chat bug rather than a config change.
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
       - DATABASE_URL=${DATABASE_URL}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-wif-config.json
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
@@ -58,10 +55,31 @@ services:
     image: ${ECR_ACCOUNT_ID:?Set ECR_ACCOUNT_ID}.dkr.ecr.${AWS_REGION:?Set AWS_REGION}.amazonaws.com/persona_stand/frontend@${FRONTEND_DIGEST:?Set promoted FRONTEND_DIGEST}
     container_name: persona_frontend
     ports:
-      # Host 80 -> container 8080. The image runs nginx as the non-root
-      # `nginx` user, which cannot bind port 80 inside the container.
-      # Nothing changes for a visitor: the site is still on :80.
+      # Host 80 -> container 8080, host 443 -> container 8443. The image runs
+      # nginx as the non-root `nginx` user, which cannot bind ports below
+      # 1024 inside the container. Nothing changes for a visitor: the site is
+      # still on :80 and :443. 443 answers nothing until TLS_DOMAIN is set.
       - "80:8080"
+      - "443:8443"
+    environment:
+      # Empty (the default): plain HTTP, exactly as before. Set to the site's
+      # domain in this instance's .env once its certificate exists, and the
+      # container serves HTTPS on 443 and redirects 80 to it. The container
+      # REFUSES TO START if this is set and the certificate is missing --
+      # see nginx/select-mode.sh in the frontend repo.
+      - TLS_DOMAIN=${TLS_DOMAIN:-}
+      # Seconds browsers remember "HTTPS only" for this domain. Starts at 5
+      # minutes so a broken certificate cannot lock visitors out for long;
+      # raise to 31536000 (a year) after a few days of working HTTPS.
+      - HSTS_MAX_AGE=${HSTS_MAX_AGE:-300}
+    volumes:
+      # certbot on this host writes challenge files here (webroot), and the
+      # container serves them on port 80 -- in both modes.
+      - ./certbot-www:/var/www/certbot:ro
+      # The certificate and key, copied here by ops/certbot-deploy-hook.sh,
+      # owned by the container's nginx user. Read-only: the container never
+      # writes them.
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - backend
     networks:

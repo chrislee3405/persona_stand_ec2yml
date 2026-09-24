@@ -43,7 +43,9 @@ test('model failure is shown as not answered and a later send recovers', async (
   const failed = await send(page, 'Please simulate a model failure.');
   expect(failed.status()).toBe(200);
   expect((await failed.json()).userMessageKept).toBe(false);
-  await expect(page.getByRole('log').getByText('✕ Not answered', { exact: true })).toBeVisible();
+  // One label for every message outside the conversation (frontend 0.7.2
+  // merged "Not answered" into it -- see MessageStatus in src/hooks/useChat.ts).
+  await expect(page.getByRole('log').getByText('✕ Not sent', { exact: true })).toBeVisible();
   const recovered = await send(page, 'Tell me about your portfolio.');
   expect(recovered.status()).toBe(200);
   await expect(page.getByRole('log').getByText(reply, { exact: true })).toBeVisible();

@@ -1,6 +1,14 @@
 import copy
+import json
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
-from deploy_release import validate
+from pathlib import Path
+from deploy_release import validate, validate_logging
+
+REPOSITORY = Path(__file__).resolve().parents[1]
 
 
 def receipt():
@@ -44,6 +52,46 @@ class DeploymentValidation(unittest.TestCase):
             data['images']['frontend'][key] = data['images']['frontend'][key].replace(old, new)
             with self.assertRaises(ValueError):
                 validate(data)
+
+
+def backend(environment):
+    return {'services': {'backend': {'environment': environment}}}
+
+
+class DeploymentLogging(unittest.TestCase):
+    def test_production_levels_are_accepted(self):
+        for level in ('INFO', 'info', 'WARNING', 'ERROR'):
+            validate_logging(backend({'LOG_LEVEL': level, 'CHAT_TRACE': 'false'}))
+
+    def test_debug_unset_or_typo_is_refused(self):
+        for environment in ({'LOG_LEVEL': 'DEBUG'}, {'LOG_LEVEL': 'debug'}, {}, {'LOG_LEVEL': 'INFOO'}):
+            with self.assertRaisesRegex(ValueError, 'LOG_LEVEL'):
+                validate_logging(backend(environment))
+
+    def test_chat_trace_is_refused(self):
+        for value in ('true', 'TRUE', '1', 'yes', 'on'):
+            with self.assertRaisesRegex(ValueError, 'CHAT_TRACE'):
+                validate_logging(backend({'LOG_LEVEL': 'INFO', 'CHAT_TRACE': value}))
+
+    @unittest.skipUnless(shutil.which('docker'), 'docker is needed to render docker-compose.ec2.yml')
+    def test_committed_compose_file_passes_and_a_debug_env_file_fails(self):
+        # The real file, rendered the way deploy() renders it on EC2.
+        placeholders = {'ECR_ACCOUNT_ID': '000000000000', 'AWS_REGION': 'ap-southeast-2',
+                        'FRONTEND_DIGEST': 'sha256:' + '0' * 64, 'BACKEND_DIGEST': 'sha256:' + '0' * 64}
+        env = {key: value for key, value in os.environ.items() if key not in ('LOG_LEVEL', 'CHAT_TRACE', 'ENV')}
+        env.update(placeholders)
+        with tempfile.TemporaryDirectory() as directory:
+            def render(env_file_text):
+                env_file = Path(directory) / 'instance.env'
+                env_file.write_text(env_file_text)
+                return json.loads(subprocess.check_output(
+                    ['docker', 'compose', '--env-file', str(env_file), '-f', str(REPOSITORY / 'docker-compose.ec2.yml'),
+                     'config', '--format', 'json'], env=env, text=True, stderr=subprocess.DEVNULL))
+
+            validate_logging(render(''))
+            # A debugging session's leftover line in the instance's .env.
+            with self.assertRaisesRegex(ValueError, 'LOG_LEVEL'):
+                validate_logging(render('LOG_LEVEL=DEBUG\n'))
 
 
 if __name__ == '__main__':

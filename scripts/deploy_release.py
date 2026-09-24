@@ -36,11 +36,37 @@ def validate(promotion):
     return environment
 
 
+# The log levels a production backend may run at. DEBUG -- and the backend's
+# CHAT_TRACE switch -- write every visitor's messages to the container logs.
+# The combined browser tests apply the same rule to the committed compose file
+# (scripts/log-policy.mjs); this applies it to what will ACTUALLY run, .env
+# overrides included. Keep the two in step.
+SAFE_LOG_LEVELS = ('INFO', 'WARNING', 'ERROR')
+_TRUE = ('1', 'true', 'yes', 'on')
+
+
+def validate_logging(config):
+    """Refuses a rendered compose configuration whose backend would log conversations."""
+    environment = (config.get('services', {}).get('backend') or {}).get('environment') or {}
+    level = str(environment.get('LOG_LEVEL', '')).strip().upper()
+    if level not in SAFE_LOG_LEVELS:
+        raise ValueError(
+            'Refusing to deploy: backend LOG_LEVEL must be one of ' + ', '.join(SAFE_LOG_LEVELS)
+            + ' (got ' + (level or 'unset') + '). Anything lower logs visitor conversations; '
+            'check LOG_LEVEL in .env and docker-compose.ec2.yml.')
+    if str(environment.get('CHAT_TRACE', '')).strip().lower() in _TRUE:
+        raise ValueError('Refusing to deploy: CHAT_TRACE is on for the backend, which logs every conversation.')
+
+
 def deploy(path):
     promotion = json.loads(Path(path).read_text())
     values = validate(promotion)
     env = {**os.environ, **values}
     compose = ['docker', 'compose', '--env-file', '.env', '-f', 'docker-compose.ec2.yml']
+    # Checked against the configuration Compose will actually use, so a
+    # LOG_LEVEL=DEBUG left in .env from a debugging session stops the
+    # deploy here, before any container is replaced.
+    validate_logging(json.loads(subprocess.check_output(compose + ['config', '--format', 'json'], env=env, text=True)))
     # Environment values override any stale image selection in .env.
     subprocess.run(compose + ['pull'], env=env, check=True)
     subprocess.run(compose + ['up', '-d', '--wait', '--wait-timeout', '180'], env=env, check=True)

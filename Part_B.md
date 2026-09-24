@@ -53,7 +53,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/app/adc.json
 
 - `DATABASE_URL` uses the compose service name `db` on port 5432 — the local Postgres container, not RDS.
 - `GOOGLE_ADC_PATH` is **your** credentials file on the host (see B.3); compose mounts it read-only into the container at `/app/adc.json`, and `GOOGLE_APPLICATION_CREDENTIALS` is what tells the Google client to read it there. Without that second line the mount does nothing and every chat turn fails to authenticate.
-- Leave `ENV` unset locally.
+- Leave `LOG_LEVEL` and `SESSION_COOKIE_SECURE` unset locally (DEBUG logging, and a session cookie that works over plain `http://localhost`).
 
 **Frontend** — Run in Local machine terminal, in `persona_stand_front`
 ```bash
@@ -116,3 +116,12 @@ docker compose down -v   # also deletes the local database; re-run the seed load
 ```
 
 ---
+
+## B.5 Local automated tests
+
+Use local tests while developing, before pushing a change. They do not create the GitHub evidence used to approve a production release.
+
+1. **Frontend terminal:** follow [frontend TESTING.md](https://github.com/chrislee3405/persona_stand_front/blob/main/TESTING.md) to install dependencies and run `npm test`, lint and build checks.
+2. **Backend terminal:** follow [backend TESTING.md](https://github.com/chrislee3405/persona_stand_back/blob/main/TESTING.md) for pytest and its disposable PostgreSQL database. Never point tests at production data.
+3. **ec2yml terminal:** follow [the local browser-test instructions](TESTING.md#run-locally-powershell) for a development rehearsal with Docker and Playwright.
+4. When ready to publish and test an intended image pair, follow [Part C.0](Part_C.md#c0-automated-tests-for-every-update). Both minor and major updates start with the same steps there.

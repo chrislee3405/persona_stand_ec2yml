@@ -1,5 +1,194 @@
 
 ---
+# version 0.7.3
+
+## Frontend
+
+- buffered chat messages stay recoverable when leaving the chatroom or refreshing
+    - queued bubbles show "Waiting to send" until the request is dispatched
+    - leaving before dispatch marks the buffered messages "Not sent"; refresh recovers stored queued messages the same way
+    - "Edit and resend" restores the message to the composer and focuses it for review before sending
+- fragment batching respects the backend's 750-character limit
+    - checks combined text using Unicode code points
+    - flushes the valid batch before a new fragment would exceed the limit, then starts another batch
+    - reaching the pending-message cap preserves the draft and the existing batch
+- 5 new regression cases, 77 frontend tests total
+    - navigation recovery, stored queued-message recovery, oversized batching, exact boundary and pending-cap behavior
+
+## Backend
+
+- session work coordinated through PostgreSQL advisory locks
+    - chat publication, rejected-message cleanup and invitation rotation share the same session lock across workers
+    - a concurrent rejected request cannot retag the question an active turn is answering
+    - invitation verification waits for an active turn before transferring ownership and consent
+    - separate bounded coordination pool; contended lock attempts release their connection before retrying
+    - cancellation or connection loss releases the transaction-scoped lock
+- consent checked again after a queued request acquires the session lock
+    - expired cached policy rows reload asynchronously after rollback, including on continue requests
+- reply publication is one transaction
+    - ownership and ordering rechecked under the conversation row lock
+    - reply insertion, fallback-message retagging and handled-cursor advancement commit together
+    - a failed publication rolls back the whole outcome; success is returned only after commit
+    - repeated publication of the same evaluated group returns superseded without another reply
+    - wait preserves the pending cursor; no_reply consumes the evaluated group
+- handled cursor cannot move backwards through stale ORM state
+    - atomic SQL GREATEST update, with locked conversation reads refreshing retained objects
+    - rejected held-group retagging and cursor advancement also commit together
+- final reply splitting cannot change approved wording
+    - joined bubbles must match the approved response after whitespace normalization
+    - added, omitted, duplicated or reordered words fall back to the original single reply
+- exception logging excludes private exception content
+    - retain exception type and stack function / line locations, omit raw values, chains, SQL parameters and source text
+    - applies before log handlers, including handlers registered later
+    - database engines hide parameters; failure review rows keep an incident ID and exception type instead of raw provider / database errors
+    - CHAT_TRACE remains the explicit switch for content tracing; source settings do not establish live configuration
+
+## Database
+
+- required schema checked at startup and through GET /api/health/ready
+    - an existing conversation table without the required non-null last_handled_index fails startup with migration instructions
+    - unreadable or incompatible required schema returns 503 instead of reporting readiness
+    - fresh databases still create the current schema at startup
+- no new migration or historical cursor reset in this update
+    - the accepted risk for legacy conversations already left at last_handled_index = -1 is unchanged
+    - existing databases still need the applicable media / cursor migrations before starting the new backend
+
+## Infrastructure
+
+- private seed JSON, exports, backups and audit output excluded from backend image inputs
+    - public consent_policy.json remains distributable
+    - explicit runtime COPY paths replace copying the whole repository
+    - export utility retained; approved private seed JSON is supplied through individual read-only mounts for operator loading
+    - previously built images are not retroactively repaired
+- backend Docker healthcheck uses /api/health/ready instead of /docs
+- migration and deployment guidance updated
+    - stop the old backend before applicable migrations and cursor backfill
+    - require schema readiness plus new guest / invite conversation checks after deployment
+    - keep the accepted off-hours deployment plan and legacy cursor behavior
+- 2 new Chromium journeys: navigate away during the send hold and recover; deliver fragments exceeding the combined limit as separate valid requests
+
+## Verification
+
+- all 10 High / Medium findings from the September working-tree audit addressed in source
+- 148 backend tests, 77 frontend tests and 8 Chromium browser tests passed
+- frontend lint, TypeScript checks and production build passed
+- infrastructure: 15 Node tests and 8 Python deployment tests passed; backend and frontend publication scripts each passed 3 tests
+- exception failure-path canaries checked; successful browser canary reached the disposable database and stayed out of backend logs
+- local verification used fictional data, disposable PostgreSQL and fake AI; no production database or live AI calls
+- Docker Desktop startup failure prevented a fresh image build / inspection and the exact Compose / nginx browser run
+    - browser checks used the built frontend with a loopback preview proxy and the real API test entrypoint
+    - image contents, container behavior and intended live configuration still require release verification
+- Low findings on consent wording / version drift and ambiguous delivery labels remain outside this remediation
+- detailed evidence: audit/persona-stand-high-medium-remediation-2026-09-24.md in the workspace
+
+---
+# version 0.7.2
+
+## Frontend
+
+- bug fix
+    - chatbot tutorial bubble misplaced above the owner name on narrow screens (< 430px)
+        - About-section chat icon hidden below 430px, floating bottom-right chat button shown from the start instead
+    - Journey pop-up stayed open and blocked the screen after clicking "See my projects"
+        - in-site links in the Journey pop-up now close it first, then jump to the linked section
+- chat turn handles a reply-less response
+    - reads the turn status from the backend: respond / wait / no_reply / superseded
+    - only the new message is sent, held text is never resubmitted
+    - waiting or ignored turns show nothing and leave the message bubble unmarked
+    - existing fragment batching, request timeout, cancellation and error fallbacks unchanged
+- a quiet visitor is never left without an answer
+    - after wait, 12s of an empty, untouched input answers the held message as it stands (continue request, no text resent)
+    - after no_reply, 10s of quiet shows "Seen. <name> didn't think that one needed a reply. Ask another question anytime."
+    - every keystroke restarts the quiet period, a send or leaving the chat cancels it, text left in the box means no continue
+    - a refused or failed continue leaves the held bubble as it is; the server answers it with the next message
+    - WAIT_CONTINUE_IDLE_MS / NO_REPLY_NOTICE_IDLE_MS in lib/knobs.ts
+    - 10 new test cases, 72 total
+- chatroom header icon served from S3
+    - read from the site_media ("chatroom", "chatroom-icon") slot, swappable without a frontend redeploy
+    - no row or a broken image falls back to the monogram, blank while site content loads
+- optional playback bar on project demo videos
+    - site_project video field playback_bar ("true" / true) shows the browser's playback bar, absent means hidden
+    - play / pause button stops above the bar so the seek bar stays clickable
+    - pausing from the bar is respected like the play / pause button, scrolling back does not restart the clip
+    - clips with a bar are reachable by keyboard and screen reader
+    - 4 new test cases, 62 total
+
+## Backend
+
+- response readiness gate before reply generation
+    - one structured check per turn returns respond, wait or no_reply
+    - wait holds the messages and answers them together with the next one
+    - no_reply marks them handled without generating a reply
+    - grounding, generation, verification and turn splitting run only on respond
+    - a failed or malformed check replies anyway, so a broken gate is never silence
+- conversation-level pending message tracking
+    - pending messages are the user rows above the conversation cursor
+    - a reply answers the whole pending group, which is excluded from prompt history
+    - cursor advances only through the messages a run actually evaluated, and only forwards
+    - failed and timed-out turns stay out of the pending group
+- POST /api/guestchat/continue and /api/invitechat/continue answer the held messages without a new one
+    - body is conversationId only; the held rows are read from the database
+    - skips the readiness check (it would say wait again), the length / privacy gates (no new text) and the daily quota (each held message already paid)
+    - keeps consent, ownership (missing or foreign id -> 404), the in-flight cap, the turn lock and deadline
+    - nothing held -> no_reply with no model call, so repeating it costs nothing
+    - a refused continue leaves the group pending; a failed generation releases it like any failed turn
+- stale run protection
+    - each run is tied to the newest message it evaluated
+    - a reply overtaken by newer input is discarded instead of published, and the group is answered by the newer turn
+- readiness, topic selection and example reranking now run concurrently
+    - database reads stay sequential on the shared session, before and after the concurrent phase
+    - the added check costs a model call but not a round trip
+- per-stage latency and token usage recorded and logged once per turn
+    - measured against fakes at 700ms per model call: replied turn +0.4% latency and +11% tokens, held or ignored turn 72% faster and 72% fewer tokens
+- AI answers greetings and small talk instead of declining
+    - grounding adds a conversational question type for greetings, thanks and social turns
+    - such turns are answered from personality with no fact list and never decline
+    - scenario and behavioural questions unchanged, no new room to state unverified facts
+- test coverage for pending message handling, concurrency, stale results and readiness failure
+- continue coverage: held group answered, nothing held, foreign / missing conversation, refused and failed continues, invite verification, invalid bodies
+- migration test for last_handled_index: existing conversations backfilled, reruns never move a live cursor
+- content validator accepts playback_bar on site_project videos (true / false / "true" / "false"), other values rejected at seed time
+- seed loader ignores whole-line // comments in seed JSON files
+
+## Database
+
+- conversation gains last_handled_index, the readiness cursor
+    - fresh databases create it automatically, existing databases run the backend migration once
+    - existing conversations are backfilled to their last message, so no earlier message is read again as pending
+    - run the migration with the old backend stopped, right before starting the new one
+- site_media: new chatroom-icon row (chatroom section)
+- site_project: persona-stand pipeline videos 1 and 2 show the playback bar
+
+## Infrastructure
+
+- HTTPS with Let's Encrypt, terminated in the frontend container's nginx
+    - frontend image picks its mode at start: plain HTTP by default, HTTPS on 8443 when TLS_DOMAIN is set
+    - HTTPS mode: 8080 only redirects to https://TLS_DOMAIN, serves certbot challenges and /healthz
+    - TLS 1.2 / 1.3, HTTP/2, HSTS from HSTS_MAX_AGE (default 300s; raise to a year once stable), never sent over HTTP
+    - refuses to start with TLS_DOMAIN set and no certificate, a non-hostname TLS_DOMAIN, or a non-numeric HSTS_MAX_AGE
+    - the HTTPS config is rendered and nginx -t checked against a throwaway certificate at image build
+    - nginx.conf is now the shared site body; nginx/ holds common.conf, http.conf, https.conf.template and select-mode.sh
+    - healthcheck moved to /healthz, which does not redirect
+- ops/certbot-deploy-hook.sh copies the certificate for the container (uid 101, key 0600) and reloads nginx on every renewal
+- docker-compose.ec2.yml publishes 443:8443 and mounts ./certs and ./certbot-www read-only
+- ENV split into LOG_LEVEL and SESSION_COOKIE_SECURE
+    - production compose sets LOG_LEVEL=INFO now, so prompts are no longer logged, independent of TLS
+    - SESSION_COOKIE_SECURE stays false until HTTPS works, then true in .env
+    - unset, both follow ENV as before; an unrecognised value stops the backend at startup
+    - 11 new backend test cases
+- conversation content kept out of the logs, three layers deep
+    - backend: prompts, replies, and model-written notes about a message (readiness reason, grounding missing/facts, response-gate quotes, malformed model output) moved to one app.chat_trace logger
+    - that logger is silent unless CHAT_TRACE=true, even at DEBUG; the INFO / WARNING lines keep the decision, counts and categories without the text
+    - the backend warns at startup when CHAT_TRACE is on
+    - deploy_release.py renders the real compose config (.env included) and refuses LOG_LEVEL below INFO or CHAT_TRACE on, before pulling anything
+    - combined browser tests: the backend runs with the logging read from docker-compose.ec2.yml; a chat message with a random canary word goes through the real UI and pipeline; the run fails unless the canary is in the database and in no container log
+    - checked in both directions locally: passes as committed, and detects the leak with CHAT_TRACE forced on
+    - 6 new backend, 5 new release-tooling (node) and 4 new deployment (python) test cases; 1 new browser test
+- combined browser test for model failure expects "✕ Not sent" (frontend 0.7.2 merged "Not answered" into it)
+- Part A "HTTPS with Let's Encrypt": buying a domain in Route 53, Elastic IP, DNS for Route 53 or another registrar, port 443, certbot issue / switch / Secure cookie / renewal check / HSTS ramp
+- Part C: .env lines, troubleshooting for certificate, redirect and Secure-cookie problems
+
+---
 # version 0.7.1
 
 ## Frontend
@@ -70,12 +259,14 @@
 - permissions and documentation
     - GHCR packages-write for publishers, packages-read for combined tests / promotion
     - old combined-test ECR role removed from workflows, BACKEND_READ_TOKEN retained for private source
-    - IAM copy policy / trust templates, Part_A first-time setup and old pre-step-8 cleanup instructions
+    - IAM copy policy / trust templates, Part_A first-time infrastructure setup; recurring test / promotion steps in Part_C
     - Part_C promotion / deployment / rollback steps, TESTING guides and README architecture updated
     - file execution sequence and coordinated API-change example, settings lookup with each value source / destination
     - local development builds distinguished from immutable CI release candidates
-    - Part_A / Part_C name the buttons, fields and confirmation controls for setup, cleanup, promotion and artifact download
+    - Part_A / Part_C name the buttons, fields and confirmation controls for setup, promotion and artifact download
     - browser actions separated from local / EC2 terminal commands, release file transfer included
+    - Part_B local checks, Part_C shared minor / major test sequence and explicit minor-update stopping point
+    - GHCR migration cleanup removed from owner-facing guides; selection file versus generated result explained
 - release validation and promotion tests cover immutable selections, trusted evidence, failed / substituted receipts, digest-preserving copy and retry / tag-conflict handling
     - 25 checks passed locally for this update: release / promotion 10, deployment validation 4, publisher safeguards 6, browser journeys 5
     - browser checks reused existing local images; cloud GHCR / ECR publication and EC2 deployment still require the documented account setup

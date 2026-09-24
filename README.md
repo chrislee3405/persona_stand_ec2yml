@@ -43,10 +43,10 @@ A visitor's request flows like this:
 ```text
 Internet
    │
-   ├── HTTP :80 ─────────────► EC2
+   ├── HTTPS :443 ───────────► EC2   (HTTP :80 redirects to HTTPS, and serves certificate renewals)
    │                            │
    │                            ▼
-   │                  frontend container — nginx (listens :8080, published as :80)
+   │                  frontend container — nginx (listens :8443 / :8080, published as :443 / :80)
    │                            ├── the React SPA
    │                            └── /api/ ──► backend container — FastAPI :8000 (not published)
    │                                                 ├── Amazon RDS (PostgreSQL)
@@ -55,7 +55,9 @@ Internet
    └── HTTPS ────────────────► CloudFront ──► S3   (images, video, CV)
 ```
 
-nginx inside the frontend container is the reverse proxy: the browser calls relative `/api/...` paths on the same origin, so no backend address is ever built into the frontend, and the backend port is never exposed on the host. TLS is not terminated yet — until it is, the site is plain HTTP on :80 and `ENV` must stay `development` (see the note in `docker-compose.ec2.yml`).
+nginx inside the frontend container is the reverse proxy: the browser calls relative `/api/...` paths on the same origin, so no backend address is ever built into the frontend, and the backend port is never exposed on the host.
+
+HTTPS terminates in that same nginx, with a Let's Encrypt certificate that certbot on the instance issues and renews (Part A, *HTTPS with Let's Encrypt*). The frontend image serves plain HTTP until `TLS_DOMAIN` is set in the instance's `.env`, so the image CI tests over HTTP is the one production runs over HTTPS. Keep `SESSION_COOKIE_SECURE=false` until HTTPS works end to end (see the note in `docker-compose.ec2.yml`).
 
 ---
 
@@ -166,7 +168,7 @@ Application `scripts/publish_image.py` builds each new commit image once. ec2yml
 
 # 3. Manual Structure
 
-Use these guides in order: Part A for first-time setup, Part B for local development, Part C for approved production releases, and Part D for content/media operations. For the GHCR migration, start at Part A.6; cleanup of the previous configuration is in Part A.6.12.
+Use these guides in order: Part A for first-time setup, Part B for local development, Part C for repeated automated tests and approved production releases, and Part D for content/media operations. Complete infrastructure setup in Part A.6 once. For each minor or major update, start at Part C.0; minor updates stop after its combined tests, while major releases continue to approval and deployment.
 
 ```text
 Part 0 - Local Machine Prerequisites—
@@ -184,15 +186,17 @@ Part A — First-Time Infrastructure Setup
     ├── A.3 ECR Setup 
     ├── A.4 RDS Setup 
     ├── A.5 GCP / Vertex AI Setup 
-    └── A.6 CI/CD Setup
+    └── A.6 Automated Testing / Release Infrastructure (once)
 
 Part B — Local Development Workflow 
     ├── B.1 Repository & Dependencies 
     ├── B.2 Environment Files 
     ├── B.3 Local Vertex AI Credentials 
-    └── B.4 Running the App Locally
+    ├── B.4 Running the App Locally
+    └── B.5 Local Automated Tests
 
 Part C — Deployment & Ongoing Operations 
+    ├── C.0 Every Update — Publish / Test / Major Promotion
     ├── C.1 First Deployment to a New EC2 Instance
     ├── C.2 Every Redeploy
     ├── C.3 After EC2 Stop/Start 

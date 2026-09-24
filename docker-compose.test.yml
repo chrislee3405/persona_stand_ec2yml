@@ -20,7 +20,13 @@ services:
       TEST_DATABASE_URL: postgresql://persona_test:persona_test@db:5432/persona_test
       PYTHONPATH: /test-support:/app
       PYTHONDONTWRITEBYTECODE: "1"
-      ENV: development
+      # The DEPLOYMENT's logging, not a development default. scripts/run-e2e.mjs
+      # reads both from docker-compose.ec2.yml, refuses DEBUG or CHAT_TRACE
+      # there, and after the browser run checks that a real chat message left
+      # no trace in any container's logs. The defaults only serve the
+      # configuration check in CI, which renders this file without starting it.
+      LOG_LEVEL: ${E2E_BACKEND_LOG_LEVEL:-INFO}
+      CHAT_TRACE: ${E2E_BACKEND_CHAT_TRACE:-false}
     volumes:
       - type: bind
         source: ${BACKEND_TESTS_PATH:-../persona_stand_back/tests}

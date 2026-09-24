@@ -1,6 +1,6 @@
 # Automated testing and release settings
 
-Use this table with [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup). Replace example values with your own; never invent an image digest or shorten a commit SHA.
+Use this table with [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) for one-time settings and [Part C.0](Part_C.md#c0-automated-tests-for-every-update) for each update's image selection and release inputs. Replace example values with your own; never invent an image digest or shorten a commit SHA.
 
 | Setting or value | Where it comes from | Where to put it |
 | --- | --- | --- |
@@ -21,7 +21,6 @@ Use this table with [Part A.6](Part_A.md#a6-automated-testing-and-github-actions
 
 A **variable** stores configuration; a **secret** stores a credential. `promotion.json` and `release-images.env` contain release identifiers, not production passwords. Keep database/session credentials in EC2's `.env`.
 
-The old `AWS_TEST_ROLE_ARN` and application `AWS_ROLE_ARN` / `ECR_REPOSITORY` settings are obsolete for this flow. Follow [Part A.6.12 cleanup](Part_A.md#a612-clean-up-the-old-configuration-before-old-step-8) before deleting settings or roles used elsewhere.
 
 # Infrastructure placeholders
 
@@ -32,6 +31,15 @@ The old `AWS_TEST_ROLE_ARN` and application `AWS_ROLE_ARN` / `ECR_REPOSITORY` se
 
 # <your-instance-id> - EC2 Instance ID
  - AWS Console → EC2 → Instances, "Instance ID" column
+
+# <your-domain> - The site's domain name, e.g. www.example.com
+ - Bought in Route 53 → Registered domains, or at any other registrar (Part A, "HTTPS with Let's Encrypt", *Before you start*)
+ - Its A record points at the instance's Elastic IP (same section, step 2)
+ - Used for the certificate (certbot -d) and TLS_DOMAIN in EC2's .env — Part A, "HTTPS with Let's Encrypt"
+ - The certificate covers exactly this one name
+
+# <your-email> - Your email for Let's Encrypt
+ - Receives certificate expiry warnings only (Part A, "HTTPS with Let's Encrypt", step 6)
 
 # <ec2-public-ip> - EC2 Public IP
  - AWS Console → EC2 → Instances → select instance → "Public IPv4 address"

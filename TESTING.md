@@ -19,7 +19,8 @@
 | `.github/workflows/integration.yml` | The single minor/major combined test workflow. |
 | `scripts/release.mjs`, `verify-images.mjs` | Validate immutable selection; pull images and verify source/revision labels. |
 | `docker-compose.test.yml`, `tests/compose.env` | Isolated test services; ignore production .env. No image build steps. |
-| `scripts/run-e2e.mjs`, `playwright.config.ts`, `tests/e2e/` | Start services, run browser journeys, record result and clean up. |
+| `scripts/run-e2e.mjs`, `playwright.config.ts`, `tests/e2e/` | Start services, run browser journeys, check the logs for conversation content, record result and clean up. |
+| `scripts/log-policy.mjs` | The logging a deployed backend may use, and the canary check of the collected container logs. |
 | `.github/workflows/promote.yml`, `scripts/promotion.mjs` | Explicit major approval, verify trusted successful run evidence, copy GHCR to ECR without changing digests. |
 | `iam/promotion-*.json` | Restricted ECR copy permissions and production-environment OIDC trust templates. |
 | `scripts/deploy_release.py`, `docker-compose.ec2.yml` | Validate promoted receipt, start only ECR images, record actual running digests. |
@@ -46,7 +47,7 @@ Pushing either application repository does **not** automatically choose or test 
 
 For a frontend-only change, step 3 uses the new frontend image and the existing intended backend image. That pair still receives the same browser suite.
 
-For the button-by-button setup, use [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup). For **Run workflow**, approval and artifact-download clicks, follow A.6.6 and A.6.10; for downloading and copying the approved files to EC2, use [Part C](Part_C.md#before-deployment-download-the-approved-release).
+For the button-by-button setup, use [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup). For every update, follow [Part C.0](Part_C.md#c0-automated-tests-for-every-update): C.0.1 publishes changed applications, C.0.2 tests the pair, C.0.3 approves a major release, and C.0.4 downloads/transfers its files. Minor updates stop after C.0.2. Local development checks belong in [Part B.5](Part_B.md#b5-local-automated-tests).
 
 ## Setup and select a pair
 
@@ -88,15 +89,21 @@ npm run test:e2e
 
 The runner explicitly ignores your production `.env`, starts its own unexposed test database in temporary memory, waits for real database-backed API readiness, runs the browser tests, captures logs, and removes only its own containers/volumes. It never starts `docker-compose.ec2.yml`. The backend test support additionally rejects database URLs outside its test-name/host allowlist.
 
-`npm test` checks release selection and promotion evidence; `python -m unittest discover -s scripts -p "test_*.py"` checks deployment validation. `npm run test:e2e:list` lists browser scenarios without starting services. `npm run test:e2e:report` opens the last browser report. Browser failures retain screenshots, videos and traces. `test-results/release-result.json` states pass/fail and the selected images; local working-tree runs are not CI release receipts.
+`npm test` checks release selection, promotion evidence and the log policy; `python -m unittest discover -s scripts -p "test_*.py"` checks deployment validation, including rendering the real `docker-compose.ec2.yml` and refusing a `LOG_LEVEL=DEBUG` instance `.env` (skipped when Docker is unavailable). `npm run test:e2e:list` lists browser scenarios without starting services. `npm run test:e2e:report` opens the last browser report. Browser failures retain screenshots, videos and traces. `test-results/release-result.json` states pass/fail and the selected images; local working-tree runs are not CI release receipts.
 
 ## What the browser suite checks
 
 - Homepage content from the real API; opening and closing a project; legacy navigation.
 - Consent dismissal prevents sending; acceptance permits guest chat; reply and conversation reference survive refresh; withdrawal is enforced by the API.
 - Privacy rejection remains marked after refresh.
-- A simulated AI failure is marked not answered, and a later message can succeed.
+- A simulated AI failure is marked not sent, and a later message can succeed.
 - Invalid invite rejection, valid invite verification, restored verification after refresh, and the invite chat endpoint.
+- **No conversation content in the logs** (`tests/e2e/log-hygiene.spec.ts` plus `run-e2e.mjs`):
+  - Before starting anything, the runner reads the backend's `LOG_LEVEL` and `CHAT_TRACE` from `docker-compose.ec2.yml` itself. It fails immediately if they would log conversations (anything below `INFO`, or `CHAT_TRACE` on).
+  - The test backend then runs with exactly those settings, so what is tested is the deployment's logging, not a development default.
+  - The spec sends a chat message containing a random canary word through the real UI, nginx and the full reply pipeline.
+  - Afterwards the runner confirms the canary reached the database, so the check cannot pass vacuously. It then fails the run if the canary, or any record from the backend's `app.chat_trace` logger, appears in any container's logs.
+  - The same rule is enforced again on EC2, where `deploy_release.py` refuses to deploy if the rendered configuration, `.env` included, would log at `DEBUG` or with `CHAT_TRACE` on.
 
 Every test uses fresh browser cookies/storage. Tests run sequentially with real pacing/rate controls enabled. API responses are not mocked. Only external model calls are replaced. CDN media requests are blocked to keep the suite independent of external availability. Uncaught browser exceptions fail the test.
 
@@ -112,6 +119,6 @@ python3 scripts/deploy_release.py promotion.json
 
 The script validates the GHCR/test/ECR chain, supplies ECR account, region and per-service digest to Compose, pulls and starts the pair, checks actual container image references and local repo digests, then saves `deployment-records/TIMESTAMP.json`. Keep that file off-instance with your release evidence. No production secret is written into the receipt. Running containers are not proof of live application health; perform Part C's browser/log checks.
 
-Rollback uses a previous successful **promotion.json**, subject to database compatibility. Production Compose constructs ECR-only references; it has no GHCR or moving-tag fallback. Existing installations replace IMAGE_TAG / FRONTEND_IMAGE / BACKEND_IMAGE selection with the promotion receipt. No workflow automatically deploys EC2.
+Rollback uses a previous successful **promotion.json**, subject to database compatibility. Production Compose constructs ECR-only references; it has no GHCR or moving-tag fallback. No workflow automatically deploys EC2.
 
 For breaking APIs, coordinate the pair and database migration. Already-open old browser clients can outlive a release; prefer backward-compatible transitions.

@@ -1,10 +1,5 @@
 # Part D — Site Content & Media 🖼️
 
-Existing databases using `site_image` must first run the backend's
-`scripts/migrations/20260917_site_media.sql` with old backend instances stopped.
-It renames the table and `image_path` column without replacing records. See the
-migration README for deployment order. Fresh databases use `site_media` directly.
-
 > The page text on the site (the About-Me statement, qualifications, journey,
 > contact details) is **not hardcoded in the frontend**. It lives in a
 > `site_content` table in RDS. Images live in an **S3 bucket** and are served
@@ -97,7 +92,7 @@ After changing VITE_CDN_BASE, create a new frontend source commit and push it so
 
 ### The tables create themselves
 
-The backend calls `Base.metadata.create_all(...)` on startup, so the `site_content`, `site_media`, `site_journey` **and** `site_project` tables are created automatically for a fresh database. **Existing databases require the rename migration above; `create_all` does not rename tables or columns.**
+The backend calls `Base.metadata.create_all(...)` on startup, so the `site_content`, `site_media`, `site_journey` **and** `site_project` tables are created automatically for a fresh database.
 
 `site_content` — the page **text**, one JSONB row per section version:
 
@@ -178,22 +173,12 @@ INSERT INTO site_content (section, content) VALUES (
 );
 -- "skills" renders as grouped pills under the role line. Pill colour is not
 -- configurable: groups alternate between the two brand colours by position.
--- An older row's "colour" key is accepted and ignored. The GROUP LABEL is
--- what conveys the grouping; colour only reinforces it.
+-- The GROUP LABEL is what conveys the grouping; colour only reinforces it.
 -- "resume" only labels the CV button beside the chat icon. The PDF itself is a
 -- site_media row (section personal_statement, description resume), seeded
 -- under "Seed the images". No row, no CV button.
 -- "owner" is the name and becomes the page's <h1>; "title" is the role
--- line under it. "title" replaced the old "heading" key -- the frontend
--- still reads "heading" when "title" is missing, so an existing row keeps
--- working, but write "title" from now on. To migrate a row in place:
---   INSERT INTO site_content (section, content)
---   SELECT 'personal_statement',
---          (content - 'heading')
---            || jsonb_build_object('title', content->>'heading',
---                                  'owner', '<your name>')
---   FROM site_content WHERE section = 'personal_statement'
---   ORDER BY id DESC LIMIT 1;
+-- line under it.
 
 -- 2. qualifications  → Education cards inside About Me.  shape: ARRAY (array order = display order)
 --    Degrees only. Awards and certificates go in `certifications` below.
@@ -456,19 +441,6 @@ ORDER BY project_id, id DESC;
 
 Then open `http://<ec2-public-ip>` in a browser — the pages should show your text and images.
 
-### Migrating an existing environment
-
-Every image AND video the site shows comes **only** from `site_media` — nothing reads a media path out of `site_content` / `site_journey` / `site_project`. If this database has a `personal_statement` row with an old inline `heroImage` key, that key is now **ignored**; run the one-liner below once so the hero still shows. (The old key can stay in the row; it just does nothing.)
-
-```sql
-INSERT INTO site_media (section, description, media_path)
-SELECT 'personal_statement', 'hero_desk', content->>'heroImage'
-FROM site_content
-WHERE section = 'personal_statement' AND content ? 'heroImage'
-ORDER BY id DESC
-LIMIT 1;
-```
-
 ---
 
 ## D.3 Every Content Update 🔁
@@ -547,7 +519,7 @@ VALUES ('personal_statement', 'hero_desk', 'about/hero.jpg');
 
 | `section` | JSON type | Fields | Shown on |
 |---|---|---|---|
-| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role; was `heading`, still read as a fallback), `cta:{label,href}`, `resume:{label}` (the PDF is a `site_media` row: `personal_statement` / `resume`), `skills:[{group,items}]` (a legacy `colour` key is ignored) | About-Me / main page |
+| `personal_statement` | object | `body` (req), `owner` (name → `<h1>`), `title` (role), `cta:{label,href}`, `resume:{label}` (the PDF is a `site_media` row: `personal_statement` / `resume`), `skills:[{group,items}]` | About-Me / main page |
 | `qualifications` | array | per item: `id`,`title` (req), `institution`, `year`, `detail` | **Education list inside About** (was its own section) |
 | `certifications` | array | per item: `id`,`title` (req), `issuer`, `year`, `detail` | **Certification & Award** section (certs + awards) |
 | `projects` | array | per item: `id` (key + `site_project.project_id`), `label` (req), `image_description` (thumbnail alt; falls back to `label`), `overview` (the card's hover blurb — keep to point form; falls back to the `site_project` paragraph overview), `image_tag`; array order = scroller order. No media path in the row — the thumbnail comes from a `site_media` row | Projects banner (between Certifications and Journey) |
@@ -600,7 +572,6 @@ Rules:
 - `media_path` holds the **S3 key only**, e.g. `about/hero.jpg` — never a full URL, never the bytes.
 - Optional `site_content` fields can be omitted entirely rather than set to `null`.
 - Every image and video on the site is a `site_media` row. No media path is ever stored in `site_content` / `site_journey` / `site_project`.
-- Legacy: an old `personal_statement` row may still carry a `heroImage` key. It is **ignored** — migrate it to a `site_media` (`personal_statement`, `hero_desk`) row (see *Migrating an existing environment*). A `site_media` row with the old single `hero` description is also no longer read.
 
 ---
 

@@ -14,6 +14,12 @@ gcp-wif-config.json
 *.pem
 *.key
 
+# HTTPS: the TLS private key and certificate copied here by
+# ops/certbot-deploy-hook.sh, and certbot's challenge webroot. Both live in
+# the ~/app clone on the instance and must never be committed.
+certs/
+certbot-www/
+
 # Test dependencies, downloaded source, and generated evidence.
 node_modules/
 backend-source/

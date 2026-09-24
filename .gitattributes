@@ -1,0 +1,4 @@
+# Shell scripts run on the Linux EC2 host. A Windows checkout with
+# core.autocrlf would otherwise give them CRLF endings, and `#!/bin/sh\r`
+# does not run.
+*.sh text eol=lf

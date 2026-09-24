@@ -110,11 +110,92 @@ aws ec2 modify-instance-metadata-options \
 ### Security Group Hardening
 EC2 Console → your instance → **Security** tab → click the security group → **Edit inbound rules**:
 - SSH (22): source = your IP or VPN CIDR only, never `0.0.0.0/0`
-- HTTP (80): source = `0.0.0.0/0` if public-facing
-- Do **not** open 8000. The backend port is not published on the host (`docker-compose.ec2.yml` uses `expose`, not `ports`), so every API call goes through nginx on port 80 and a rule for 8000 would reach nothing
+- HTTP (80): source = `0.0.0.0/0` if public-facing. Keep it open after HTTPS is on: certificate renewals arrive on 80, and it redirects visitors to HTTPS
+- HTTPS (443): source = `0.0.0.0/0` if public-facing (needed from the HTTPS steps below)
+- Do **not** open 8000. The backend port is not published on the host (`docker-compose.ec2.yml` uses `expose`, not `ports`), so every API call goes through nginx on port 80/443 and a rule for 8000 would reach nothing
 
-### Reverse Proxy + TLS (recommended for production)
-If this deployment is public-facing, terminate TLS in front of the frontend container. The included `nginx.conf` — **edited on your local machine, then deployed via the frontend Docker image** — already proxies `/api/` to the backend container, so only TLS termination is missing: e.g. Let's Encrypt/Certbot **on the EC2 instance** (nginx already serves `/.well-known/acme-challenge/` from `/var/www/certbot`, which needs a volume mounted there), or an ACM certificate on an ALB configured in the **AWS Console**. Once HTTPS works end to end, set `ENV=production` in the instance's `.env` — not before: it marks the session cookie `Secure`, and a browser never sends that over plain HTTP (see the note in `docker-compose.ec2.yml`).
+### HTTPS with Let's Encrypt
+HTTPS terminates in the frontend container's own nginx, with a free Let's Encrypt certificate that `certbot` on the instance issues and renews. There is no load balancer, so nginx still sees each visitor's real IP address and the rate limits keep working unchanged.
+
+The frontend image serves plain HTTP until `TLS_DOMAIN` is set in `.env`, then HTTPS on 443 with port 80 redirecting to it. The same image works both ways, so the tested release is what runs.
+
+#### Before you start: get a domain name
+Let's Encrypt does not issue certificates for a bare IP address, so the site needs a domain. Skip this if you already own one; note which registrar it is with, because step 2 depends on it.
+
+Buying it in Route 53 keeps DNS in the same AWS account and needs no extra DNS setup.
+**Where:** AWS Console → **Route 53** → **Registered domains** → **Register domains**.
+1. Type the name you want in the search box and click **Search**.
+2. Click **Select** next to an available name (a `.com` is about US$15 a year), then **Proceed to checkout**.
+3. Choose the duration, leave **Auto-renew** on so the domain does not lapse, and click **Next**.
+4. Fill in the contact details. Leave **Privacy protection** on, so your details are hidden from public WHOIS lookups. Click **Next**, review, tick the terms, and click **Submit**.
+5. Open the email Route 53 sends to the registrant address and click the verification link. **The domain is suspended after 15 days if this is not done.**
+6. Wait for the registration to finish. **Where:** Route 53 → **Registered domains** → **Requests**. It usually takes a few minutes, occasionally hours.
+
+When it finishes, Route 53 creates a **hosted zone** for the domain automatically. That is where step 2 adds the DNS record. A hosted zone costs US$0.50 a month.
+
+Other registrars (Namecheap, GoDaddy, Cloudflare, ...) work equally well. Buy the domain there and use that registrar's own DNS settings in step 2.
+
+#### Steps
+1. **Give the instance a fixed address.**
+   **Where:** AWS Console → EC2 → **Elastic IPs** → **Allocate Elastic IP address** → **Allocate**. Then select it → **Actions** → **Associate Elastic IP address** → choose your instance → **Associate**.
+   Without it, the public IP changes on every stop/start and the domain stops pointing at the site.
+2. **Point the domain at it.** Add an **A** record whose value is the Elastic IP, wherever the domain's DNS is managed:
+   - **Domain bought in Route 53.** **Where:** Route 53 → **Hosted zones** → click the domain → **Create record**. Leave **Record name** empty for the bare domain (`example.com`), or type `www` for `www.example.com`. Set **Record type** to **A**, paste the Elastic IP into **Value**, and click **Create records**.
+   - **Domain bought elsewhere.** **Where:** that registrar's site → your domain → **DNS** (sometimes "Manage DNS" or "DNS records"). Add a record with type **A**, host **`@`** for the bare domain (or **`www`**), and value = the Elastic IP. Delete any existing A record for the same host that points somewhere else, such as a registrar parking page.
+   - **No hosted zone listed for a domain you bought in Route 53?** The registration is still in progress or waiting on the verification email (see *Before you start*), or you are signed in to a different AWS account. Hosted zones are global, so the region selector does not matter.
+
+   `<your-domain>` everywhere below is exactly the name you created the record for, e.g. `www.example.com` or `example.com`. The certificate covers only that name.
+   Check from your local machine that `nslookup <your-domain>` returns the Elastic IP before continuing. A new record usually works within minutes, but can take up to an hour.
+3. **Open port 443.** Add the HTTPS rule in *Security Group Hardening* above.
+4. **Deploy a release whose frontend supports HTTPS**, still over plain HTTP, the normal way (Part C). Leave `TLS_DOMAIN` unset for now. Open `http://<your-domain>` in your browser and confirm the site loads.
+   `docker compose` creates `~/app/certs` and `~/app/certbot-www` on first start; they stay empty until step 6.
+5. **Install certbot.** Run in the EC2 instance terminal:
+   ```bash
+   sudo apt update && sudo apt install -y certbot
+   ```
+   On Amazon Linux, use `sudo dnf install -y certbot` instead.
+   The package installs a systemd timer that checks twice a day and renews the certificate when it is within 30 days of expiry.
+6. **Issue the certificate.** Run in the EC2 instance terminal, with your own domain and email:
+   ```bash
+   sudo certbot certonly --webroot -w /home/ubuntu/app/certbot-www -d <your-domain> \
+     --deploy-hook "sh /home/ubuntu/app/ops/certbot-deploy-hook.sh" \
+     --email <your-email> --agree-tos --no-eff-email
+   sudo ls -l /home/ubuntu/app/certs
+   ```
+   `ls` should list `fullchain.pem` and `privkey.pem`, owned by uid `101`.
+   - The running site serves certbot's challenge file on port 80, so there's no downtime.
+   - The deploy hook copies the certificate where the container can read it, and certbot remembers the hook for every renewal.
+   - The email only receives expiry warnings.
+7. **Switch the frontend to HTTPS.** Add this line to `~/app/.env`:
+   ```env
+   TLS_DOMAIN=<your-domain>
+   ```
+   Then restart only the frontend. Run in the EC2 instance terminal:
+   ```bash
+   cd ~/app
+   docker compose --env-file .env --env-file release-images.env -f docker-compose.ec2.yml up -d frontend
+   docker logs persona_frontend 2>&1 | grep persona:
+   ```
+   The log should say `persona: serving https://<your-domain> on 8443`.
+   **Where: your browser.**
+   - `https://<your-domain>` shows a padlock.
+   - `http://<your-domain>` redirects to it.
+   - The chat works.
+8. **Mark the session cookie Secure.** Only after step 7 works: add `SESSION_COOKIE_SECURE=true` to `~/app/.env`, then run the same `up -d` command with `backend` instead of `frontend`.
+   **Where:** browser DevTools → Application → Cookies → `session`. The **Secure** column should be ticked.
+   Then send a chat message to confirm consent and replies still work.
+9. **Check that renewal will work.** Run in the EC2 instance terminal:
+   ```bash
+   sudo certbot renew --dry-run
+   systemctl list-timers | grep certbot
+   ```
+   The first command should report success, and the second should list the timer.
+10. **After a few days of working HTTPS**, add `HSTS_MAX_AGE=31536000` to `~/app/.env` and restart the frontend as in step 7.
+    HSTS tells browsers to use HTTPS for your domain without asking. It starts at 5 minutes (300 seconds) on purpose: if the certificate broke while a year-long policy was cached, visitors could not fall back to HTTP until it expired.
+
+**Undoing it.** Remove `TLS_DOMAIN`, set `SESSION_COOKIE_SECURE=false`, and restart both services. Browsers that have seen the HSTS header still insist on HTTPS until its max-age runs out.
+
+**If the frontend container keeps restarting after step 7**, run `docker logs persona_frontend`. The container refuses to start when `TLS_DOMAIN` is set but `~/app/certs` holds no certificate; it prints the exact reason. Fix the certificate, or remove `TLS_DOMAIN` to go back to HTTP.
 
 ### Automatic Security Patching
 Run in EC2 instance terminal
@@ -255,9 +336,9 @@ The `chmod` matters: the backend container runs as a non-root user (uid 10001), 
 
 ## A.6 Automated Testing and GitHub Actions — First-Time Setup
 
-This replaces the old ECR-based testing setup. Tests run on GitHub's temporary computers: **no running EC2, ECR images, RDS or Google credentials are needed**. AWS is used only for approved promotion and production deployment.
+Configure the test and release infrastructure once in this section. Tests run on GitHub's temporary computers: **no running EC2, ECR images, RDS or Google credentials are needed**. AWS is used only for approved promotion and production deployment.
 
-Already followed the old steps before Step 8? See A.6.12 below for cleanup. Keep your working production infrastructure.
+For repeatable application pushes, image selection, testing and release approval, use [Part C.0](Part_C.md#c0-automated-tests-for-every-update).
 
 For a quick lookup of every value and its destination, use [Automated testing and release settings](placeholder_lookup.md#automated-testing-and-release-settings).
 
@@ -289,18 +370,18 @@ Push order does not matter. Select a pair once both intended images exist. A fro
 3. Find **Actions permissions**. Confirm Actions are enabled and the workflow's actions are allowed by your repository/organisation policy. If you change the selected permission option, click **Save** in that section. The YAML explicitly requests the publishing job's `packages: write`; you do not need to grant every job broad write permission.
 4. For frontend only, click **Secrets and variables** in the Settings sidebar, then **Actions**. Click the **Variables** tab, then **New repository variable**.
 5. In **Name**, type `VITE_CDN_BASE`. In **Value**, paste your real HTTPS CloudFront base URL. Click **Add variable**. Confirm the variable now appears in the list. If it already exists, use its pencil/**Edit** control, check the value and click **Update variable** only if changing it.
-6. Do not create a GHCR password: `GITHUB_TOKEN` is supplied automatically. Remove old AWS settings only after the new workflows are active, following A.6.12.
+6. Do not create a GHCR password: `GITHUB_TOKEN` is supplied automatically. Application publication does not need AWS credentials.
 
 The CDN value is baked into the image. To change it, make a new source commit and test its new image. Promotion never changes build settings or rebuilds an image.
 
-### A.6.3 Publish the first GHCR images
+### A.6.3 Install workflows and initialise GHCR packages
 
-1. Review and commit the frontend changes, then push your working branch (for example `dev/v0.8.0`). Repeat independently for backend. No merge to trial/main is necessary just to publish.
-2. **Browser, GitHub:** click the repository's **Actions** tab. In the left workflow list, click **Test and publish frontend** (or **Test and publish backend**). Click the run whose commit matches your push. Wait for its checks and `build-and-push` to show green checkmarks.
-3. Click **Summary** in the run's left sidebar. Scroll to **Published commit image** and copy `image` and `revision`. To download the record, scroll to **Artifacts** and click the `ghcr-image-COMMIT` artifact name. On Windows, open Downloads, right-click the downloaded ZIP, click **Extract All…**, then **Extract**, and open `image.json` in your editor.
-4. Keep both records. The tag is `sha-FULL_COMMIT`; the selection must use the full `ghcr.io/OWNER/persona_stand_front@sha256:...` or `persona_stand_back` reference.
+This is a one-time bootstrap step. The packages must exist before you can grant ec2yml access to them.
 
-Every branch push publishes after passing tests. Pull-request events test only; they do not publish synthetic merge commits. Reruns reuse the existing commit image and check its labels. Authentication/network errors stop publication. Retain commit tags and tested images; deleting or manually overwriting them destroys reproducibility. New image contents require a new source commit.
+1. Confirm the frontend/backend repositories contain their `.github/workflows/deploy.yml`, publication script and independent tests. Confirm ec2yml contains its workflows, scripts and test configuration. For a new owner, check the owner/account placeholders in the example selection and IAM templates.
+2. Commit and push any initial setup files that are not already on GitHub. Ensure ec2yml's workflows are present on its default branch so their **Run workflow** buttons can appear. A combined run without a selected pair will fail until you complete the first selection; this is expected and is not a passing release test.
+3. If your application packages do not yet exist, follow [C.0.1](Part_C.md#c01-push-application-changes-and-collect-ghcr-images) once to publish the first tested application commits. If the intended packages/images already exist, reuse them.
+4. Return here and finish A.6.4–A.6.8 before the first end-to-end setup check in A.6.9. Future application updates go directly to Part C; do not reinstall the workflows or recreate roles.
 
 ### A.6.4 Give ec2yml read access to both GHCR packages
 
@@ -331,29 +412,7 @@ Skip this for a public backend. Keep an existing suitable `BACKEND_READ_TOKEN`.
 
 The workflow checks out test support at the selected backend commit. Application code runs from the GHCR image, with test support mounted separately.
 
-### A.6.6 Select the pair and run combined tests
-
-1. Locally in ec2yml, copy `release-versions.example.json` to `release-versions.json`.
-2. Replace frontend `image` and `revision` with values from its build record. Repeat for backend; do not shorten either digest or commit.
-3. In the ec2yml terminal run `npm ci`, then `npm run release:validate`. This produces generated `selected-release.json`; do not commit that generated file.
-4. Review and commit the workflows, scripts, documentation and completed `release-versions.json`; push ec2yml. The workflow runs on every branch push and same-repository PR. Fork PRs receive configuration checks only.
-5. **Browser, GitHub:** click ec2yml **Actions** → **Combined browser tests** in the left sidebar → the run matching your push. Check that both `configuration` and `combined-browser` have green checkmarks. To inspect a failure, click the failed job name, then click the failed step to expand its log.
-6. Click the run's **Summary**, scroll to **Artifacts**, and click `combined-test-results-RUN_ID-ATTEMPT` to download it. Extract the ZIP on your computer. `test-results/release-result.json` must say `passed` and contain the intended images, source SHAs, coordinator SHA, run ID and attempt. Browser reports/logs explain failures.
-
-**To start the combined workflow manually — browser, GitHub:**
-
-1. First ensure the workflow file exists on the default branch; otherwise its manual-run control will not appear.
-2. Click ec2yml **Actions** → **Combined browser tests** in the left sidebar.
-3. Click **Run workflow** above the run list to open the input panel. Open the **Branch** selector and choose `main` for a promotable release.
-4. Leave all four image/commit fields empty to use the committed selection, or fill in all four with the intended pair.
-5. Click the green **Run workflow** button inside the panel to submit. This is a second click: opening the panel alone does not start anything.
-6. Refresh the run list if necessary, click the new run, then inspect its jobs and artifact as above.
-
-Promotion accepts successful main push/manual runs, not PR or development-coordinator runs.
-
-A minor update ends here: nothing goes to ECR. Artifact retention is 90 days, subject to repository limits. Download release evidence for longer retention. If evidence expires, test the same GHCR digests again; never rebuild them to obtain a receipt.
-
-### A.6.7 Protect release decisions
+### A.6.6 Protect release decisions
 
 **Where: your browser, GitHub.**
 
@@ -366,17 +425,17 @@ A minor update ends here: nothing goes to ECR. Artifact retention is 90 days, su
 
 Required reviewers depend on GitHub plan and repository visibility. If unavailable, the workflow still requires a write-authorised operator to manually select the successful run and check the approval checkbox. That is a single-operator approval, not an independent second-person gate. If a second-person gate is required, arrange a supported environment before enabling promotion. YAML alone does not configure reviewer protection.
 
-### A.6.8 Prepare ECR for promoted releases
+### A.6.7 Prepare ECR for promoted releases
 
 **Where: your browser, AWS Console.**
 
 1. Use the top search bar to search for `ECR`, then click **Elastic Container Registry**. Use the top-right region selector to choose your ECR region.
 2. In the sidebar under **Private registry**, click **Repositories**. Select the radio button beside `persona_stand/frontend` and click **Edit**.
-3. Under **Image tag mutability**, select **Immutable**. Remove the old `main`/`trial` exclusion entries using their remove control, if present. Click **Save**.
+3. Under **Image tag mutability**, select **Immutable**. Leave the exclusion list empty. Click **Save**.
 4. Repeat for `persona_stand/backend`. Keep existing deployed/rollback images.
 5. To inspect retention, click a repository name, then **Lifecycle policy**. Check its rules before making changes; images required for current deployment or rollback must remain available. The same retention requirement applies to the GHCR originals and downloaded evidence.
 
-### A.6.9 Create the promotion IAM role
+### A.6.8 Create the promotion IAM role
 
 This role copies images only; it cannot deploy EC2 or manage databases.
 
@@ -393,52 +452,16 @@ This role copies images only; it cannot deploy EC2 or manage databases.
 9. In GitHub ec2yml, click **Settings** → **Environments** → **production**. Scroll to **Environment variables**, then click **Add environment variable**.
 10. Enter `AWS_PROMOTION_ROLE_ARN` in **Name**, paste the ARN in **Value**, and click **Add variable**. Repeat to add `AWS_REGION` with value `ap-southeast-2` (or your actual region). Confirm both names appear under Environment variables, not Environment secrets.
 
-The environment trust subject does not contain a branch name: A.6.7's **main-only environment restriction is essential**. Builds and combined tests get no AWS credentials. EC2 keeps its existing ECR read-only instance role.
+The environment trust subject does not contain a branch name: A.6.6's **main-only environment restriction is essential**. Builds and combined tests get no AWS credentials. EC2 keeps its existing ECR read-only instance role.
 
-### A.6.10 Approve and promote a major release
+### A.6.9 Verify setup and hand over to the update workflow
 
-**Where: your browser, GitHub.**
+1. Follow [C.0.2](Part_C.md#c02-select-the-pair-and-run-combined-tests--minor-and-major) once using the two existing GHCR images. Confirm both jobs pass and download their result artifact.
+2. If required status-check names were unavailable when configuring A.6.6, return to its ruleset settings, add the now-visible checks, and click **Save changes**.
+3. Confirm package read access, private backend source access if needed, production environment restrictions, IAM role and its environment variables are saved. You do not need to promote a release just to finish testing setup.
+4. First-time setup is complete. For every future minor or major update, start at [Part C.0](Part_C.md#c0-automated-tests-for-every-update). Use [Part B](Part_B.md#b5-local-automated-tests) for local tests while developing.
 
-1. Click ec2yml **Actions** → **Combined browser tests** → the successful main run for your intended pair. Click **Summary** and confirm both jobs passed.
-2. Copy the run ID from your browser address (`.../actions/runs/123456789`). The downloaded artifact name `combined-test-results-RUN_ID-ATTEMPT` gives the exact attempt number; copy its final number as well.
-3. Click **Actions** again. In the left sidebar, click **Approve major release and promote to ECR**. Click **Run workflow** above the run list.
-4. In the panel, open **Branch** and select `main`. Fill in the run-ID field, attempt-number field and release-version field (for example `v0.8.0`). Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
-5. Click the newly created run. If it is waiting for environment approval, click **Review deployments**, select the checkbox beside **production**, review the test result, and click **Approve and deploy**. Despite that GitHub button's wording, this workflow only promotes images to ECR; it does not deploy to EC2.
-6. Wait for the `promote` job to show a green checkmark. It validates evidence, copies both images with digest preservation and verifies the ECR digests; no build occurs. If it fails, click **promote**, then the red failed step to read its log.
-7. Click **Summary**, scroll to **Artifacts**, and click `promoted-release-VERSION-RUN_ID-ATTEMPT`. Extract the downloaded ZIP and keep `promotion.json`, `release-images.env` and the included test evidence together. Continue to Part C for EC2 deployment.
-
-A failed copy does not create a successful receipt. One image may already have copied; rerun with the same pair and label. Never reuse a label for different contents. Promotion does not automatically restart EC2.
-
-### A.6.11 Troubleshooting
-
-| Symptom | Check |
-| --- | --- |
-| GHCR publication denied | packages-write, organisation policy, existing package publishing access. |
-| GHCR pull denied | Both packages grant ec2yml Actions read access. |
-| Private source checkout denied | BACKEND_READ_TOKEN scope, expiry and approval. |
-| No release selected | Complete the manifest or all four manual inputs. |
-| Promotion rejects evidence | Successful main push/manual run, correct attempt, same workflow/repository, unexpired artifact. |
-| AWS AssumeRole denied | Environment branch rule, exact ARN and trust subject. |
-| Existing ECR tag conflict | Retries must use the same pair; new contents need a new release label. |
-| Digest changes during copy | Stop; diagnose registry/tool handling. Do not deploy or rebuild. |
-
-Tests use temporary PostgreSQL, fake Gemini and blocked media. Live TLS, real AI quality, CDN availability and production migrations still need separate checks.
-
-### A.6.12 Clean up the old configuration before old Step 8
-
-These are the old guide's step numbers. Clean up after the new workflows are active. This does not undo your working production infrastructure.
-
-1. **Record old role ARNs first.** Copy the old ec2yml `AWS_TEST_ROLE_ARN` and application `AWS_ROLE_ARN` values into a temporary note so you can identify the exact roles later. They are identifiers, not passwords.
-2. **Finish or cancel old runs.** In each repository, click **Actions**, then the old running ECR workflow run. Wait for it to finish, or open the run's **…** menu and click **Cancel workflow**, confirming if prompted. Confirm the new application workflow publishes to ghcr.io and combined tests no longer configure AWS credentials.
-3. **Delete the old test variable.** ec2yml → Settings → Secrets and variables → Actions → Variables: find the `AWS_TEST_ROLE_ARN` row, click its trash-can/**Delete** control, then click **Delete variable** in the confirmation dialog (or the displayed **Delete** confirmation). Check environment variables too if you saved it there. Keep AWS_REGION if another workflow uses it; promotion now uses the production environment variable. Remove a redundant repository value only once the new value exists.
-4. **Delete obsolete application variables.** Frontend/backend → the same Variables screen: find each `AWS_ROLE_ARN`, `ECR_REPOSITORY`, and `AWS_REGION` row. Only if no remaining workflow uses it, click its trash-can/**Delete** control and confirm **Delete variable**. Repeat for each obsolete variable. Keep frontend `VITE_CDN_BASE` and unrelated settings.
-5. **Keep private backend access.** Keep ec2yml `BACKEND_READ_TOKEN` if backend is private. If public and the token was created only for this purpose, click the **Secrets** tab, use that secret's trash-can/**Delete** control and confirm deletion. Then open your profile **Settings → Developer settings → Personal access tokens → Fine-grained tokens**, locate that specific token, click **Delete** and confirm. Do not revoke a token used elsewhere.
-6. **Delete the old AWS test role.** AWS IAM → Roles: open `PersonaStandCombinedTestsRole` (or the ARN recorded in step 1). Confirm no other workflow uses it and that it is not the EC2 or new promotion role. Return to the **Roles** list, select only that role's checkbox and click **Delete**. Review last-access information, type the role name if requested by the dialog, and click **Delete** to confirm.
-7. **Delete its unused policy.** IAM → Policies → `PersonaStandCombinedTestsECRRead`: check Entities attached. Once no other role uses it, return to **Policies**, select that policy's checkbox, click **Actions → Delete**, then confirm **Delete** in the dialog. If the console asks for a confirmation phrase, type the exact phrase shown. Do not remove shared/AWS-managed policies.
-8. **Retire old app publishing roles only if exclusive.** Inspect roles from the recorded application ARNs. Once GHCR publishing works, delete roles used solely by the replaced workflows; delete customer-managed policies only if unused elsewhere. For a shared role, remove only the obsolete repository trust statements instead.
-9. **Keep shared infrastructure.** Keep the GitHub OIDC provider, EC2 ECR-read instance role, ECR repositories, deployed/rollback images, EC2, RDS, GCP federation and CDN. New promotion and deployment still need them. No new AWS access keys are required.
-10. **Old ECR test images are optional cleanup.** If you already published one, delete it only after confirming it is neither deployed nor kept for rollback. An old dev/trial tag alone does not mean an image is unused.
-11. **Verify.** A development push should test and publish to GHCR with no AWS role in the application repository. Combined tests should work with EC2 stopped. ECR receives new images only after explicit approved promotion.
+The setup in A.6.6–A.6.8 is needed for production releases. If you are currently enabling testing only, you can defer production setup until before your first promotion; it is not part of every minor update.
 
 References: [GHCR access](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry), [environment protection availability](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments), [ECR permissions](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-push-iam.html), [Skopeo copy](https://github.com/containers/skopeo/blob/main/docs/skopeo-copy.1.md).
 
