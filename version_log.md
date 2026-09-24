@@ -66,6 +66,11 @@
     - require schema readiness plus new guest / invite conversation checks after deployment
     - keep the accepted off-hours deployment plan and legacy cursor behavior
 - 2 new Chromium journeys: navigate away during the send hold and recover; deliver fragments exceeding the combined limit as separate valid requests
+- stabilize the buffered-message navigation browser test on CI
+    - pause the browser clock before submitting so the send hold cannot expire while Playwright navigates
+    - wait for the home route to render and the chat to unmount before going back
+    - resume timers only after the recovered message is explicitly resubmitted
+    - keep the zero-request-before-retry and exactly-one-request-after-retry assertions
 
 ## Verification
 
@@ -80,6 +85,8 @@
     - image contents, container behavior and intended live configuration still require release verification
 - Low findings on consent wording / version drift and ambiguous delivery labels remain outside this remediation
 - detailed evidence: audit/persona-stand-high-medium-remediation-2026-09-24.md in the workspace
+- follow-up verification: Docker became available; all 8 browser tests and the log-canary check passed through the actual Compose / nginx stack using the selected CI image digests
+    - the formerly flaky navigation test also passed 5 consecutive repetitions in a separate disposable stack
 
 ---
 # version 0.7.2
