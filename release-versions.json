@@ -1,10 +1,10 @@
 {
   "frontend": {
-    "image": "ghcr.io/chrislee3405/persona_stand_front@sha256:0a1c133bb99ee0675b3a87c400817fe5b7f163fc141821f08e4e1aa0ca3f4c6c",
-  "revision": "6d1dce3ae53ea0a6d8ce214d4214a8dbb63f8812"
+    "image": "ghcr.io/chrislee3405/persona_stand_front@sha256:29b835ae490dba804b96012f04a102d9ab1054f8fd61319ee942030a5568faa9",
+  "revision": "55c78674d8e46ee685108f86e544367ccd3fc169"
   },
   "backend": {
-    "image": "ghcr.io/chrislee3405/persona_stand_back@sha256:b7e83033e1cd4914d2cd339135248e55fb3b07f10309116f696c22b9552ccf73",
-    "revision": "29b852f76b626dbcc9b45ed755a6a6cb3e3ee1d4"
+    "image": "ghcr.io/chrislee3405/persona_stand_back@sha256:070f528481c9a25de1df963cbec1b8c00fd42c4d2085596d8a4a4d4a251ffeaf",
+    "revision": "3234eb5adbc981c54d1cc4d995289d571737b9c2"
   }
 }

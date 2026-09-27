@@ -1,5 +1,44 @@
 
 ---
+# version 1.0.1
+
+## Frontend
+
+- queued chat messages use normal styling without a "Waiting to send" notice; only failed sends show the red "Not sent" state
+- project-video pause overlays no longer remain visible because of sticky touch hover
+    - mouse hover and keyboard focus can still reveal Pause; paused videos retain Play
+- project detail videos select matching `_mob` video and poster tags below 768 CSS pixels
+    - selection updates on viewport changes; missing mobile video entries fall back to desktop
+    - mobile frames use a 3:4 ratio without cropping; prefetching selects the matching assets
+    - mobile posters are optional; a missing mobile poster does not substitute a landscape poster
+
+## Backend
+
+- grounding evaluates coverage against the actual question, not every possible detail about the topic
+    - one supported example can fully satisfy a request for one example
+    - missing information identifies only the specific requested part that cannot be answered
+- complete answers omit missing-information disclaimers
+    - partial answers name the missing part and provide the supported part naturally
+    - partial answers no longer require an automatic referral to Chris
+    - missing-information wording takes precedence over conflicting personality or scenario guidance
+- the response auditor also checks contradictions within a reply
+    - rejects disclaiming information and then providing that same information
+    - permits a precise gap in one part alongside a supported answer to another part
+
+## Validation and release notes
+
+- four backend prompt-assembly regression tests passed; live model compliance has not been evaluated for this change
+- frontend TypeScript and targeted lint checks passed
+- responsive video regression tests were added, but the latest test runs timed out starting their workers; no passing result is claimed for those new cases
+- no database schema migration is required for these changes
+- records local app changes; deployment is not confirmed by this entry
+
+---
+# version 1.0.0
+
+## All update from 0.7.1 to 0.7.3
+
+---
 # version 0.7.3
 
 ## Frontend
@@ -163,8 +202,6 @@
     - fresh databases create it automatically, existing databases run the backend migration once
     - existing conversations are backfilled to their last message, so no earlier message is read again as pending
     - run the migration with the old backend stopped, right before starting the new one
-- site_media: new chatroom-icon row (chatroom section)
-- site_project: persona-stand pipeline videos 1 and 2 show the playback bar
 
 ## Infrastructure
 
@@ -296,7 +333,6 @@
     - withdraws consent on the server, the consent card comes back until agreed again
     - local state flips only after the server confirms, a failure says why
 - conversation reference shown under the chatroom, quoted when asking the owner to delete a conversation
-- welcome notice explains the chat is an AI version of Chris, replaces "System connected."
 - user message bubble light blue -> brand orange tint (--brand-accent-line)
 - wrapped message bubbles shrink to their longest line
     - a two-line bubble used to stretch to max-width with an empty strip beside the text
@@ -352,7 +388,6 @@
 - personality_reference column cluture_background -> culture_background
 - index=True dropped from 12 primary keys, it created a duplicate ix_<table>_id next to the primary key index
 - message.selected_scenario / selected_document documented as owner review metadata
-- seed: 2026-current journey detail rewritten for the current status and side project
 - existing databases need one-off DDL for all of the above, see Part_C steps 6-9
 
 ## Infrastructure
