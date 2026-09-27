@@ -27,6 +27,9 @@
 
 ## Validation and release notes
 
+- send-hold browser test updated for the normal queued-message UI
+    - checks the visible message without waiting or error labels, then preserves the navigation recovery and exactly-one-request-after-resend assertions
+    - all 8 browser tests are discoverable; the corrected browser flow still requires an integration run
 - four backend prompt-assembly regression tests passed; live model compliance has not been evaluated for this change
 - frontend TypeScript and targeted lint checks passed
 - responsive video regression tests were added, but the latest test runs timed out starting their workers; no passing result is claimed for those new cases

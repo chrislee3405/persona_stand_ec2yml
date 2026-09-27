@@ -13,7 +13,14 @@ test('leaving during the send hold preserves an unsent message that can be edite
   const text = 'Tell me about the project tests.';
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill(text);
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
-  await expect(page.getByText('Waiting to send', { exact: true })).toBeVisible();
+  // Queuing is normal sending behavior: the bubble is visible without a
+  // waiting notice or failure marker. The paused clock keeps it undispatched.
+  const chatLog = page.getByRole('log');
+  await expect(chatLog.getByText(text, { exact: true })).toBeVisible();
+  await expect(chatLog.getByText('Waiting to send', { exact: true })).toHaveCount(0);
+  await expect(chatLog.getByText('✕ Not sent', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit and resend', exact: true })).toHaveCount(0);
+  expect(sent).toHaveLength(0);
   await page.getByRole('link', { name: 'Test Candidate — home', exact: true }).click();
   // A history update alone does not prove React committed the route change.
   // Wait for the chat to unmount before navigating back.
