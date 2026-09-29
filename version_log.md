@@ -1,5 +1,30 @@
 
 ---
+# version 1.0.2
+
+## Backend
+
+- verified invite chats use code.description as optional role context in the reply-writing system prompt
+    - applies to new messages and held-message continuation; guest chats and blank descriptions omit it
+    - uses the current verified invite record rather than client-supplied data or a conversation's historical code
+    - prioritises relevant approved facts without treating job requirements as candidate evidence; regeneration retains the context
+- later requests for introductions and recaps may reuse approved facts already discussed
+    - grounding reassesses the current request instead of treating previous refusals as missing evidence
+    - summaries keep refusals tied to their original questions while retaining concrete facts
+    - requested speaking duration does not prevent a supported shorter answer
+- broad near-term goal questions can use documented current intentions without requiring a separate annual plan
+    - specific deadlines, milestones and long-term goals still require supporting evidence
+    - replies express current intentions without inventing deadlines or promising outcomes
+
+## Validation and release notes
+
+- 13 backend prompt-assembly regression tests passed, covering answer coverage, later introductions and current intentions versus explicit deadline gaps
+    - these checks do not establish live model compliance
+- invite role-context regression tests were added; a passing run has not been confirmed
+- no database schema migration is required
+- records local app changes after v1.0.1; deployment is not confirmed by this entry
+
+---
 # version 1.0.1
 
 ## Frontend
