@@ -42,6 +42,10 @@
 
 ## Release coordination
 
+- approved ECR promotion automatically finds passing combined-test evidence for the current coordinator commit and exact RELEASE_VERSION marker, removing manual run-ID/attempt entry
+    - release label is derived from the marker; missing, expired or mismatched evidence stops promotion without falling back to another candidate
+    - explicit approval remains required; the workflow summary links the selected test run
+
 - frontend, backend and ec2yml share a RELEASE_VERSION marker; every candidate bumps all three repositories, including marker-only component updates
 - successful independent tests publish GHCR images with the matching version tag and source/revision labels
 - an ec2yml push automatically waits up to 30 minutes for both matching images and resolves immutable digests and source revisions, removing manual image/revision copying
@@ -52,7 +56,7 @@
 
 ## Validation and release notes
 
-- release-tool checks passed: 8 publisher tests per application, 15 coordinator Python tests and 20 coordinator JavaScript tests; live GitHub publication/promotion remains unverified
+- release-tool checks passed: 8 publisher tests per application, 15 coordinator Python tests and 28 coordinator JavaScript tests (including 8 automatic evidence-selection checks); live GitHub publication/promotion remains unverified
 
 - 14 project-video tests passed for mobile media selection, tap-to-pause/resume, paused-only symbols, seeking and viewport changes; TypeScript and targeted lint checks passed; physical phone rendering remains unverified
 - existing databases require scripts/migrations/20261002_message_token_usage.sql before backend deployment; the additive migration preserves messages and is safe to rerun

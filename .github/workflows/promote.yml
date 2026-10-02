@@ -3,19 +3,6 @@ name: Approve major release and promote to ECR
 on:
   workflow_dispatch:
     inputs:
-      test_run_id:
-        description: 'Successful Combined browser tests run ID from ec2yml main'
-        required: true
-        type: string
-      test_run_attempt:
-        description: 'Successful run attempt number'
-        required: true
-        default: '1'
-        type: string
-      release_version:
-        description: 'Approved major release label, e.g. v0.8.0'
-        required: true
-        type: string
       approve_major_release:
         description: 'I approve copying this tested pair to production ECR'
         required: true
@@ -41,24 +28,19 @@ jobs:
       packages: read
       id-token: write
     env:
-      TEST_RUN_ID: ${{ inputs.test_run_id }}
-      TEST_RUN_ATTEMPT: ${{ inputs.test_run_attempt }}
-      RELEASE_VERSION: ${{ inputs.release_version }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Read the exact test run attempt from GitHub
-        run: |
-          [[ "$TEST_RUN_ID" =~ ^[0-9]+$ && "$TEST_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID/attempts/$TEST_RUN_ATTEMPT" > test-run.json
+      - name: Find passing combined tests for this release
+        run: node scripts/find-passing-release.mjs
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.test_run_id }}
-          name: combined-test-results-${{ inputs.test_run_id }}-${{ inputs.test_run_attempt }}
+          run-id: ${{ env.TEST_RUN_ID }}
+          name: combined-test-results-${{ env.TEST_RUN_ID }}-${{ env.TEST_RUN_ATTEMPT }}
           path: evidence
       - name: Verify successful test provenance
         run: node scripts/promotion.mjs --check
@@ -81,7 +63,7 @@ jobs:
         run: node scripts/promotion.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: promoted-release-${{ inputs.release_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: promoted-release-${{ env.RELEASE_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             promotion.json
             release-images.env

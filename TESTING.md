@@ -23,7 +23,7 @@
 | `docker-compose.test.yml`, `tests/compose.env` | Isolated test services; ignore production .env. No image build steps. |
 | `scripts/run-e2e.mjs`, `playwright.config.ts`, `tests/e2e/` | Start services, run browser journeys, check the logs for conversation content, record result and clean up. |
 | `scripts/log-policy.mjs` | The logging a deployed backend may use, and the canary check of the collected container logs. |
-| `.github/workflows/promote.yml`, `scripts/promotion.mjs` | Explicit major approval, verify trusted successful run evidence, copy GHCR to ECR without changing digests. |
+| `.github/workflows/promote.yml`, `scripts/find-passing-release.mjs`, `scripts/promotion.mjs` | Explicit major approval, verify trusted successful run evidence, copy GHCR to ECR without changing digests. |
 | `iam/promotion-*.json` | Restricted ECR copy permissions and production-environment OIDC trust templates. |
 | `scripts/deploy_release.py`, `docker-compose.ec2.yml` | Validate promoted receipt, start only ECR images, record actual running digests. |
 
@@ -34,7 +34,7 @@
 | Push frontend | `.github/workflows/deploy.yml` → lint / Vitest / build checks → `scripts/publish_image.py` → Dockerfile if that commit image is absent. | Commit-specific GHCR image and `image.json`. |
 | Push backend | `.github/workflows/deploy.yml` → pytest with temporary PostgreSQL → `scripts/publish_image.py` → Dockerfile if that commit image is absent. | Commit-specific GHCR image and `image.json`. |
 | Push the shared marker to ec2yml main, or run its combined workflow manually | `integration.yml` → `resolve_release.py` → `release.mjs` → `verify-images.mjs` → checkout matching backend test support → `run-e2e.mjs` → `docker-compose.test.yml` → Playwright configuration and browser tests. | Pass/fail receipt plus reports; test containers are removed. |
-| Approve a major release | `promote.yml` → retrieve successful run evidence → `promotion.mjs --check` → registry login → `promotion.mjs`. | Unchanged images copied to ECR; promotion receipt and deployment settings. |
+| Approve a major release | `promote.yml` → `find-passing-release.mjs` → retrieve matching successful run evidence → `promotion.mjs --check` → registry login → `promotion.mjs`. | Unchanged images copied to ECR; promotion receipt and deployment settings. |
 | Deploy on EC2 | `deploy_release.py promotion.json` → validate receipt → `docker-compose.ec2.yml` pull / up → inspect running images. | Running ECR pair and a deployment record. |
 
 Application pushes publish only after their tests pass. Your ec2yml push starts the combined workflow; it may arrive before the app builds finish. The resolver polls the exact shared marker and fails on timeout or invalid labels rather than choosing an earlier image. No cross-repository dispatch token or automated git push is needed.
@@ -63,7 +63,7 @@ Same-repository PRs and branch pushes run the suite; fork PRs run configuration 
 
 `combined-test-results-RUN_ID-ATTEMPT` contains `selected-release.json`, browser reports/logs and `test-results/release-result.json`: status, shared release marker, both digests/SHAs, coordinator commit, repository, run ID and attempt. A failed or skipped run is never eligible.
 
-To release, manually run **Approve major release and promote to ECR** on main, enter the successful run ID/attempt and release version (`v1.0.3` for a `1.0.3-rc.N` candidate), and check the approval checkbox. The production environment supplies an additional review gate where configured. The workflow fetches that exact run attempt through GitHub's API and its named artifact, rejects mismatched/failed/untrusted evidence, and uses `skopeo copy --all --preserve-digests` for both images. It verifies destination digests before issuing `promotion.json` and `release-images.env`. No Docker build occurs. ECR release tags must be immutable.
+To release, manually run **Approve major release and promote to ECR** on main, check the approval checkbox. `find-passing-release.mjs` automatically finds the newest successful trusted combined run for the current ec2yml commit and its exact attempt, then derives `v1.0.3` from `1.0.3-rc.N`. There are no run-ID, attempt or version inputs. The downloaded evidence must match the full marker and coordinator commit before AWS credentials are obtained; missing/expired evidence or mismatches stop promotion without an older fallback. The production environment supplies an additional review gate where configured. The workflow fetches that exact run attempt through GitHub's API and its named artifact, rejects mismatched/failed/untrusted evidence, and uses `skopeo copy --all --preserve-digests` for both images. It verifies destination digests before issuing `promotion.json` and `release-images.env`. No Docker build occurs. ECR release tags must be immutable.
 
 Retain GHCR originals and immutable ECR release tags, plus downloaded evidence. Workflow artifacts have 90-day retention subject to repository settings. If evidence expires, rerun combined tests on the same images; never rebuild. A partially failed promotion can leave one copied image, but emits no successful receipt. Retry the same pair/label; never overwrite a label with other contents.
 

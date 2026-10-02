@@ -27,6 +27,11 @@ export function validateEvidence(run, receipt, selection, repository, runId, att
   return selection;
 }
 
+export function validateTarget(run, selection, marker, revision) {
+  if (selection.releaseVersion !== marker) throw new Error('Test evidence does not match the coordinator RELEASE_VERSION; refusing fallback');
+  if (run.head_sha !== revision) throw new Error('Test evidence does not match the current coordinator commit');
+}
+
 export function promote(selection, registry, version, execute) {
   if (!/^\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com$/.test(registry)) throw new Error('Invalid ECR registry');
   if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Error('Release label must be vX.Y.Z');
@@ -64,6 +69,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const run = read('test-run.json');
   const receipt = read('evidence/test-results/release-result.json');
   const selection = validateEvidence(run, receipt, read('evidence/selected-release.json'), repository, runId, attempt);
+  validateTarget(run, selection, readFileSync('RELEASE_VERSION', 'utf8').trim(), process.env.GITHUB_SHA);
   // Check mode runs before obtaining AWS credentials.
   if (process.argv.includes('--check')) {
     console.log('Verified successful test evidence for', runId, attempt);

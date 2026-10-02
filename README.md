@@ -19,6 +19,7 @@ a marker-only commit. CI waits for matching tested GHCR images and automatically
 resolves their digests and source commits; no copying or local release validation
 is required. Approved releases copy the tested images unchanged to ECR. EC2 pulls
 only promoted ECR digests using `promotion.json`; see [Part C](Part_C.md).
+Promotion automatically finds passing evidence for the exact marker and current ec2yml commit, derives the ECR release label, and requires your approval. No run ID or attempt needs copying.
 Use a fresh candidate suffix for another application build. The app's displayed
 version remains `v1.0.3`; candidate markers identify builds, not database content.
 

@@ -423,7 +423,7 @@ The workflow checks out test support at the selected backend commit. Application
 5. Under **Deployment branches and tags**, open the dropdown and choose **Selected branches and tags**. Click **Add deployment branch or tag rule**. Select **Branch**, enter `main` as the name pattern, and click **Add rule**. Confirm that only the intended main branch rule is listed.
 6. Where available, check **Required reviewers**, search for and select your reviewer. With a second reviewer, select **Prevent self-review**; a solo owner must leave that off to approve their own run. Clear **Allow administrators to bypass configured protection rules** if that option is shown and bypass is not intended. Click **Save protection rules**.
 
-Required reviewers depend on GitHub plan and repository visibility. If unavailable, the workflow still requires a write-authorised operator to manually select the successful run and check the approval checkbox. That is a single-operator approval, not an independent second-person gate. If a second-person gate is required, arrange a supported environment before enabling promotion. YAML alone does not configure reviewer protection.
+Required reviewers depend on GitHub plan and repository visibility. If unavailable, the workflow still requires a write-authorised operator to start promotion on main and check the approval checkbox; matching passing evidence is selected automatically. That is a single-operator approval, not an independent second-person gate. If a second-person gate is required, arrange a supported environment before enabling promotion. YAML alone does not configure reviewer protection.
 
 ### A.6.7 Prepare ECR for promoted releases
 

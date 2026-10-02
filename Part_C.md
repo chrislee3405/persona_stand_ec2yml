@@ -40,17 +40,19 @@ If a combined test fails and an application needs a code fix, increment the cand
 
 ### C.0.3 Approve and promote a major release
 
-**Prerequisite:** complete C.0.1–C.0.2 with a successful combined run from ec2yml main. Minor and major updates use the same suite. If the exact pair already has a successful main push/manual run with retained evidence, use that run; otherwise run the same suite on main with the same digests. Never rebuild a tested image for promotion.
+**Prerequisite:** complete C.0.1–C.0.2 with a successful combined run from ec2yml main. Minor and major updates use the same suite. The current ec2yml main commit must have a successful push/manual run with retained evidence; otherwise run the same suite on that commit with the matching images. Never rebuild a tested image for promotion.
 
 **Where: your browser, GitHub.**
 
 1. Click ec2yml **Actions** → **Combined browser tests** → the successful main run for your intended pair. Click **Summary** and confirm both jobs passed.
-2. Copy the run ID from your browser address (`.../actions/runs/123456789`). The downloaded artifact name `combined-test-results-RUN_ID-ATTEMPT` gives the exact attempt number; copy its final number as well.
+2. Confirm the current ec2yml main commit has passed combined tests. Promotion automatically finds its newest successful trusted run and exact attempt; there is no run ID to copy.
 3. Click **Actions** again. In the left sidebar, click **Approve major release and promote to ECR**. Click **Run workflow** above the run list.
-4. In the panel, open **Branch** and select `main`. Fill in the run-ID field, attempt-number field and release-version field (for example `v1.0.3` for the tested `1.0.3-rc.1` marker). Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
+4. In the panel, open **Branch** and select `main`. The release label is derived from `RELEASE_VERSION` (`1.0.3-rc.1` becomes `v1.0.3`); there are no run-ID, attempt or version fields. Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
 5. Click the newly created run. If it is waiting for environment approval, click **Review deployments**, select the checkbox beside **production**, review the test result, and click **Approve and deploy**. Despite that GitHub button's wording, this workflow only promotes images to ECR; it does not deploy to EC2.
 6. Wait for the `promote` job to show a green checkmark. It validates evidence, copies both images with digest preservation and verifies the ECR digests; no build occurs. If it fails, click **promote**, then the red failed step to read its log.
 7. Click **Summary**, scroll to **Artifacts**, and click `promoted-release-VERSION-RUN_ID-ATTEMPT`. Extract the downloaded ZIP and keep `promotion.json`, `release-images.env` and the included test evidence together. Continue to C.0.4 to transfer the files, then C.1 for first deployment or C.2 for redeployment.
+
+The workflow requires the downloaded evidence to match the complete candidate marker and current ec2yml commit before obtaining AWS credentials. Its job summary links the selected test run. If tests are missing, unfinished or failed, or evidence is expired/mismatched, promotion stops without selecting an older candidate. After any new ec2yml commit, wait for its combined tests to pass; an application rebuild is unnecessary if the marker and app pair are unchanged.
 
 A failed copy does not create a successful receipt. One image may already have copied; rerun with the same pair and label. Never reuse a label for different contents. Promotion does not automatically restart EC2.
 
@@ -137,7 +139,7 @@ The app should be reachable at `http://<ec2-public-ip>` — **Where: your local 
 For a minor update, stop after the combined tests: nothing needs changing on EC2. For an approved major release:
 
 1. Run the same combined workflow for the intended GHCR pair on ec2yml main.
-2. Manually approve and run promotion using that successful run ID and attempt (C.0.3).
+2. Manually approve and run promotion on main; it automatically selects matching passing evidence (C.0.3).
 3. Follow **C.0.4 Download and transfer the approved release** above: click the successful promotion run → **Summary** → its artifact name, extract the ZIP, verify the release, then use the local SCP command to transfer `promotion.json` and `release-images.env` to `~/app`.
 4. Back up production data before deploying. For an existing database, stop the old backend before schema changes and apply the selected backend release's SQL migrations. For this release these are `20260917_site_media.sql` (if the media rename is outstanding) and `20260920_conversation_last_handled_index.sql`. Follow that release's `scripts/migrations/README.md`, using `psql -v ON_ERROR_STOP=1` and the intended PostgreSQL connection. Do not run the old backend after the cursor backfill. Fresh databases get the current schema at startup. Preserve the accepted behavior of already-migrated legacy cursors; do not reset them as part of redeployment.
 5. Run the commands below. The script validates the receipt, pulls only ECR digests, starts both services, verifies their actual image references, and writes `deployment-records/TIMESTAMP.json` with the full source-to-deployment chain.
@@ -182,7 +184,7 @@ successfully tested pair of immutable image references.
 | Private source checkout denied | BACKEND_READ_TOKEN scope, expiry and approval. |
 | Matching images unavailable | Check that all three markers match, both application tests/publications passed and the packages grant read access. Rerun after publication; never substitute an older tag. |
 | Release marker already used | Increment the candidate suffix in all three repositories and publish both applications. |
-| Promotion rejects evidence | Successful main push/manual run, correct attempt, same workflow/repository, unexpired artifact. |
+| Promotion rejects evidence | Successful main push/manual run for the current coordinator commit, exact candidate marker and unexpired artifact. No older-version fallback. |
 | AWS AssumeRole denied | Environment branch rule, exact ARN and trust subject. |
 | Existing ECR tag conflict | Retries must use the same pair; new contents need a new release label. |
 | Digest changes during copy | Stop; diagnose registry/tool handling. Do not deploy or rebuild. |
