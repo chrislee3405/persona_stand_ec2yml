@@ -69,3 +69,18 @@ test('rejects injected release labels and non-ECR destinations', () => {
     assert.throws(() => promote(selection, registry, version, () => assert.fail('Must not execute')));
   }
 });
+
+test('promotion version must match the tested marker', () => {
+  const marked = { ...selection, releaseVersion: '1.0.3-rc.1' };
+  assert.throws(() => promote(marked, '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com', 'v1.0.4', () => assert.fail('must not execute')), /base version/);
+  const result = promote(marked, '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com', 'v1.0.3', (_cmd, args) => JSON.stringify({ Digest: 'sha256:' + (args.at(-1).includes('/frontend') ? '0' : '1').repeat(64) }));
+  assert.ok(result.backend.ecrImage);
+});
+
+test('receipt must preserve the selected release marker', () => {
+  const [run, receipt] = evidence();
+  const marked = { ...selection, releaseVersion: '1.0.3-rc.1' };
+  assert.throws(() => validateEvidence(run, receipt, marked, repository, '123', '2'), /marker differs/);
+  receipt.selectedRelease.releaseVersion = '1.0.3-rc.1';
+  assert.equal(validateEvidence(run, receipt, marked, repository, '123', '2'), marked);
+});

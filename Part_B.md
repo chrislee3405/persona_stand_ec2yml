@@ -4,7 +4,7 @@ Everything in this part runs on **local machine**, except where explicitly noted
 
 The local stack is self-contained: `persona_stand_back/docker-compose.yml` runs its own Postgres, the backend and the frontend. **Nothing in this part connects to production.** The SSH tunnel to RDS is only for managing production content — see Part D.
 
-For independent and combined automated-test commands, see the frontend/backend `TESTING.md` files and this repository's [TESTING.md](TESTING.md). Local Docker builds are development rehearsals. Release candidates are built once in application CI, published to GHCR, then selected and tested by digest in ec2yml. Follow [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) to enable that flow and [Part C](Part_C.md) to promote/deploy an approved pair without rebuilding.
+For independent and combined automated-test commands, see the frontend/backend `TESTING.md` files and this repository's [TESTING.md](TESTING.md). Local Docker builds are development rehearsals. Release candidates are built once in application CI, published to GHCR, then matched by the shared RELEASE_VERSION and tested by digest in ec2yml. Both application markers change for every candidate, including when only one has functional changes. Follow [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) to enable that flow and [Part C](Part_C.md) to promote/deploy an approved pair without rebuilding.
 
 ## B.1 Repository & Dependencies
 

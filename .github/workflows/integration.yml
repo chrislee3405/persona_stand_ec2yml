@@ -5,19 +5,6 @@ on:
   push:
     branches: ['**']
   workflow_dispatch:
-    inputs:
-      frontend_image:
-        description: 'Frontend GHCR image@sha256:digest (leave all inputs empty to use release-versions.json)'
-        type: string
-      frontend_revision:
-        description: 'Full frontend commit SHA'
-        type: string
-      backend_image:
-        description: 'Backend GHCR image@sha256:digest'
-        type: string
-      backend_revision:
-        description: 'Full backend commit SHA'
-        type: string
 
 permissions:
   contents: read
@@ -48,29 +35,30 @@ jobs:
     # pair in a trusted branch or manual run after reviewing the changes.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
-    env:
-      INPUT_FRONTEND_IMAGE: ${{ inputs.frontend_image }}
-      INPUT_FRONTEND_REVISION: ${{ inputs.frontend_revision }}
-      INPUT_BACKEND_IMAGE: ${{ inputs.backend_image }}
-      INPUT_BACKEND_REVISION: ${{ inputs.backend_revision }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Select and validate the intended pair
-        id: release
-        run: npm run release:validate
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install registry inspection tool
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Wait for both tested images with this release marker
+        run: python3 scripts/resolve_release.py
+      - name: Validate the resolved immutable pair
+        id: release
+        env:
+          RELEASE_SELECTION_FILE: resolved-release.json
+        run: npm run release:validate
       - name: Pull images and verify their source revisions
         run: node scripts/verify-images.mjs
       - name: Checkout backend test support matching the image

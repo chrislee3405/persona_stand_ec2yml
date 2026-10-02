@@ -12,12 +12,15 @@ This file contains the deployment notes and setup procedure for a Persona Stand 
 Start with [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup)
 for the step-by-step first-time GitHub and AWS testing setup.
 See [TESTING.md](TESTING.md) for independent frontend/backend checks and the
-combined Playwright suite owned by this repository. Select exact frontend and
-backend image digests in `release-versions.json` (start from the example), test
-the pair with one workflow for minor and major updates. All passing branch
-builds publish to GHCR. Minor updates stay there; approved major releases copy
-the tested images unchanged to ECR. EC2 pulls only promoted ECR digests using
-`promotion.json`; see [Part C](Part_C.md). No image is rebuilt after testing.
+combined Playwright suite owned by this repository. Commit the same root
+`RELEASE_VERSION` in all three repositories (initially `1.0.3-rc.1`), then push
+both applications and ec2yml main. Even a component without code changes gets
+a marker-only commit. CI waits for matching tested GHCR images and automatically
+resolves their digests and source commits; no copying or local release validation
+is required. Approved releases copy the tested images unchanged to ECR. EC2 pulls
+only promoted ECR digests using `promotion.json`; see [Part C](Part_C.md).
+Use a fresh candidate suffix for another application build. The app's displayed
+version remains `v1.0.3`; candidate markers identify builds, not database content.
 
 > **Important:** Replace every value surrounded by `<...>` with your own value. Do not commit passwords, private keys, AWS access keys, Google service-account private keys, or database credentials.
 
@@ -30,7 +33,7 @@ The intended production architecture is:
 ```text
 Application branch push
    -> independent tests -> commit-specific GHCR images
-   -> ec2yml selects exact frontend/backend digests and source commits
+   -> ec2yml push waits for matching RELEASE_VERSION images, resolves digests/commits
    -> combined Playwright tests on a GitHub-hosted runner
        -> minor: retain GHCR images and test evidence
        -> approved major: copy unchanged images to ECR using AWS OIDC
@@ -126,7 +129,8 @@ The backend GitHub Actions workflow builds the backend Docker image and publishe
 persona_stand_ec2yml/
 ├── .github/workflows/integration.yml  combined tests for every selected pair
 ├── .github/workflows/promote.yml      approved GHCR-to-ECR copy
-├── release-versions.example.json     template for your image selection
+├── RELEASE_VERSION                   shared release candidate marker
+├── release-versions.example.json     legacy local manual selection template
 ├── docker-compose.test.yml           isolated browser-test services
 ├── docker-compose.ec2.yml            production ECR services
 ├── scripts/                          selection, verification, testing, promotion and deployment

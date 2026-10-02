@@ -350,7 +350,7 @@ For a quick lookup of every value and its destination, use [Automated testing an
 Push frontend or backend, on any branch
   -> independent tests
   -> build once and publish to GHCR
-  -> select exact frontend + backend digests in ec2yml
+  -> ec2yml push waits for matching RELEASE_VERSION images and resolves digests
   -> ONE combined browser-test workflow
       -> minor update: keep images in GHCR and test report in GitHub
       -> approved major release: copy tested images unchanged to ECR
@@ -359,7 +359,7 @@ Push frontend or backend, on any branch
 
 A commit SHA identifies source code. An image digest identifies exact packaged contents, like a fingerprint. Tags are readable labels; tests and deployment use digests. “Major” means your explicit production release decision, not a branch name or automatic version-number rule.
 
-Push order does not matter. Select a pair once both intended images exist. A frontend-only update retains the previous backend digest and commit. Every changed pair receives the same combined suite.
+Set the same RELEASE_VERSION in all three repositories. Push order does not matter: ec2yml waits up to 30 minutes for matching tested images. Even a frontend-only functional change requires a backend marker-only commit and new tested image. Every pair receives the same combined suite. Use a fresh candidate suffix for each new application build; see Part C.0.
 
 ### A.6.2 Configure application publication
 
@@ -379,7 +379,7 @@ The CDN value is baked into the image. To change it, make a new source commit an
 This is a one-time bootstrap step. The packages must exist before you can grant ec2yml access to them.
 
 1. Confirm the frontend/backend repositories contain their `.github/workflows/deploy.yml`, publication script and independent tests. Confirm ec2yml contains its workflows, scripts and test configuration. For a new owner, check the owner/account placeholders in the example selection and IAM templates.
-2. Commit and push any initial setup files that are not already on GitHub. Ensure ec2yml's workflows are present on its default branch so their **Run workflow** buttons can appear. A combined run without a selected pair will fail until you complete the first selection; this is expected and is not a passing release test.
+2. Commit and push any initial setup files that are not already on GitHub. Ensure ec2yml's workflows are present on its default branch so their **Run workflow** buttons can appear. Include RELEASE_VERSION in all three repositories. The first combined run waits for both matching version-labelled images; it fails if publication or package access is not ready. After configuring access below, rerun it.
 3. If your application packages do not yet exist, follow [C.0.1](Part_C.md#c01-push-application-changes-and-collect-ghcr-images) once to publish the first tested application commits. If the intended packages/images already exist, reuse them.
 4. Return here and finish A.6.4–A.6.8 before the first end-to-end setup check in A.6.9. Future application updates go directly to Part C; do not reinstall the workflows or recreate roles.
 
@@ -456,7 +456,7 @@ The environment trust subject does not contain a branch name: A.6.6's **main-onl
 
 ### A.6.9 Verify setup and hand over to the update workflow
 
-1. Follow [C.0.2](Part_C.md#c02-select-the-pair-and-run-combined-tests--minor-and-major) once using the two existing GHCR images. Confirm both jobs pass and download their result artifact.
+1. Follow [C.0.2](Part_C.md#c02-select-the-pair-and-run-combined-tests--minor-and-major) after both applications publish images with the shared RELEASE_VERSION marker. Older images without a version label cannot satisfy this flow. Confirm both jobs pass and download their result artifact.
 2. If required status-check names were unavailable when configuring A.6.6, return to its ruleset settings, add the now-visible checks, and click **Save changes**.
 3. Confirm package read access, private backend source access if needed, production environment restrictions, IAM role and its environment variables are saved. You do not need to promote a release just to finish testing setup.
 4. First-time setup is complete. For every future minor or major update, start at [Part C.0](Part_C.md#c0-automated-tests-for-every-update). Use [Part B](Part_B.md#b5-local-automated-tests) for local tests while developing.

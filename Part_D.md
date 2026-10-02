@@ -288,7 +288,7 @@ INSERT INTO site_content (section, content) VALUES (
   'footer',
   $j${
     "owner": "<name in the copyright line — omit to reuse personal_statement.owner>",
-    "note": "<one short line, e.g. Built with React, FastAPI and AWS>",
+    "version": "<release label, e.g. v1.0.3>",
     "links": [
       { "label": "GitHub",   "href": "https://github.com/<handle>" },
       { "label": "LinkedIn", "href": "https://www.linkedin.com/in/<handle>" }
@@ -527,7 +527,7 @@ VALUES ('personal_statement', 'hero_desk', 'about/hero.jpg');
 | `contact` | object | `email` (req), `intro`, `location`, `links:[{label,href}]` | Contact Me section (below Journey; LinkedIn/GitHub icons matched by label) + the footer's links when `footer.links` is absent |
 | `chatroom` | object | `name` — persona display name; whole row optional, falls back to `personal_statement.owner` | Chatroom header |
 | `navbar` | object | `name` beside the brand mark; optional, falls back to `personal_statement.owner` | Site header |
-| `footer` | object | `owner`, `note`, `links`; all optional, year is computed | Site footer |
+| `footer` | object | `owner`, `version`, `links`; all optional, year is computed | Site footer; version is a database-managed label, not runtime image verification |
 
 ### `site_journey` (journey click-through detail)
 

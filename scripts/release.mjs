@@ -4,6 +4,9 @@ import { pathToFileURL } from 'node:url';
 // Keep user-supplied selections out of shell code and Docker flags. CI accepts
 // only this project's GHCR repositories, pinned to immutable image contents.
 export function validateRelease(release) {
+  if (release?.releaseVersion !== undefined && !/^[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[1-9][0-9]*)?$/.test(release.releaseVersion)) {
+    throw new Error('Invalid releaseVersion marker');
+  }
   for (const part of ['frontend', 'backend']) {
     const value = release?.[part];
     const repository = part === 'frontend' ? 'persona_stand_front' : 'persona_stand_back';
@@ -23,6 +26,13 @@ export function validateRelease(release) {
 }
 
 export function readRelease() {
+  if (process.env.RELEASE_SELECTION_FILE) {
+    const release = validateRelease(JSON.parse(readFileSync(process.env.RELEASE_SELECTION_FILE, 'utf8')));
+    if (release.releaseVersion !== readFileSync('RELEASE_VERSION', 'utf8').trim()) {
+      throw new Error('Resolved pair does not match the coordinator RELEASE_VERSION');
+    }
+    return release;
+  }
   const names = ['INPUT_FRONTEND_IMAGE', 'INPUT_FRONTEND_REVISION', 'INPUT_BACKEND_IMAGE', 'INPUT_BACKEND_REVISION'];
   if (names.some(name => process.env[name])) {
     return validateRelease({

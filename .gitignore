@@ -34,3 +34,5 @@ evidence/
 deployment-records/
 
 __pycache__/
+
+resolved-release.json

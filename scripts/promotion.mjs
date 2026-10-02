@@ -11,6 +11,7 @@ export function validateEvidence(run, receipt, selection, repository, runId, att
     throw new Error('Promotion requires a successful Combined browser tests run from trusted main');
   }
   validateRelease(selection);
+  if (receipt.selectedRelease?.releaseVersion !== selection.releaseVersion) throw new Error('Test receipt release marker differs');
   if (receipt.status !== 'passed' || receipt.repository !== repository ||
       receipt.runId !== runId || receipt.runAttempt !== attempt ||
       receipt.coordinatorRevision !== run.head_sha) throw new Error('Test receipt does not match the GitHub run');
@@ -30,6 +31,9 @@ export function promote(selection, registry, version, execute) {
   if (!/^\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com$/.test(registry)) throw new Error('Invalid ECR registry');
   if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Error('Release label must be vX.Y.Z');
   validateRelease(selection);
+  if (selection.releaseVersion && version !== 'v' + selection.releaseVersion.split('-rc.')[0]) {
+    throw new Error('Release label must match the tested release marker base version');
+  }
   const result = {};
   for (const part of ['frontend', 'backend']) {
     const source = selection[part];

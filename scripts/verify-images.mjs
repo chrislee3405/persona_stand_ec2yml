@@ -11,6 +11,9 @@ for (const part of ['frontend', 'backend']) {
   const expectedSource = 'https://github.com/' + selected.image.split('@')[0].replace('ghcr.io/', '');
   if (source?.toLowerCase() !== expectedSource) throw new Error(`${part} source repository does not match its GHCR path`);
   const revision = image.Config?.Labels?.['org.opencontainers.image.revision'];
+  if (release.releaseVersion && image.Config?.Labels?.['org.opencontainers.image.version'] !== release.releaseVersion) {
+    throw new Error(`${part} image version does not match the shared release marker`);
+  }
   if (revision !== selected.revision) {
     throw new Error(`${part} image revision ${revision ?? '(missing label)'} does not match selected commit ${selected.revision}`);
   }

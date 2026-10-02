@@ -2,47 +2,41 @@
 
 ## C.0 Automated tests for every update
 
-Complete the one-time GitHub/package/IAM setup in [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) first. Use this section every time application code changes.
+Complete the one-time GitHub/package/IAM setup in [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup) first.
 
 | Update | Repeat these steps | End result |
 | --- | --- | --- |
-| Minor | C.0.1 publish changed applications → C.0.2 test the selected pair. | Tested images stay in GHCR; production is unchanged. |
-| Major | The same C.0.1–C.0.2 tests → C.0.3 approved promotion → C.0.4 transfer → C.1 or C.2 deployment. | The exact tested images are copied to ECR and deployed on EC2. |
+| Test a candidate | C.0.1 set the shared marker and publish both applications → C.0.2 automatically resolve and test the matching pair. | Tested images stay in GHCR; production is unchanged. |
+| Release to production | The same tests → C.0.3 approved promotion → C.0.4 transfer → C.1 or C.2 deployment. | The exact tested images are copied to ECR and deployed on EC2. |
 
-No separate major-only test suite exists. Each changed pair receives the same combined browser tests. A frontend/backend push does not automatically choose a pair in ec2yml: you explicitly select the intended digests after they exist. A failed test means fixing the relevant code and selecting its new commit image, not promoting the failed pair.
+The existing workflow is called **Approve major release and promote to ECR**; it can promote an approved patch release such as `v1.0.3` too. The approval and deployment steps are explicit for every production release.
 
-### C.0.1 Push application changes and collect GHCR images
+### C.0.1 Push application changes with a shared release marker
 
-1. **Local machine:** review, commit and push each application repository you changed (for example on `dev/v0.8.0`). If only one application changed, keep the other application's existing intended digest and source SHA. Each pushed branch runs independent tests before publishing. No merge to trial/main is necessary just to publish.
-2. **Browser, GitHub:** click the repository's **Actions** tab. In the left workflow list, click **Test and publish frontend** (or **Test and publish backend**). Click the run whose commit matches your push. Wait for its checks and `build-and-push` to show green checkmarks.
-3. Click **Summary** in the run's left sidebar. Scroll to **Published commit image** and copy `image` and `revision`. To download the record, scroll to **Artifacts** and click the `ghcr-image-COMMIT` artifact name. On Windows, open Downloads, right-click the downloaded ZIP, click **Extract All…**, then **Extract**, and open `image.json` in your editor.
-4. Keep both records. The tag is `sha-FULL_COMMIT`; the selection must use the full `ghcr.io/OWNER/persona_stand_front@sha256:...` or `persona_stand_back` reference.
+1. **Local machine:** put the same value in the root `RELEASE_VERSION` file in **all three repositories**. This update starts with `1.0.3-rc.1`. Keep one line with no `v` prefix. The candidate suffix distinguishes builds while the public app version remains `v1.0.3`.
+2. Commit and push both application repositories, including their markers. Even if only the backend has functional changes, the frontend needs its marker-only commit, tests and new image. The application repositories can use your existing development branches.
+3. Both application workflows run independent tests before publishing GHCR images. Each image has a `sha-FULL_COMMIT` tag and a `release-1.0.3-rc.1` tag, plus source repository, source revision and version labels. Push order does not matter.
+4. In GitHub **Actions**, check **Test and publish frontend** and **Test and publish backend**. Their summaries and `image.json` artifacts remain available for inspection; you no longer copy their digests or revisions into ec2yml.
 
-Every branch push publishes after passing tests. Pull-request events test only; they do not publish synthetic merge commits. Reruns reuse the existing commit image and check its labels. Authentication/network errors stop publication. Retain commit tags and tested images; deleting or manually overwriting them destroys reproducibility. New image contents require a new source commit.
+**Every new candidate needs a fresh marker.** After any further application commit, use `1.0.3-rc.2` in all three repositories, then `.3`, and so on. This includes marker-only or documentation-only commits in an application repository once its earlier marker was published. Do not reuse a published marker for another commit. Rerunning the same commit reuses its image; partial publication can finish on a rerun. Publication is serialized within each application repository to prevent concurrent marker writes. If a queued publication is cancelled by a newer run, rerun the intended application workflow.
+
+Keep published commit and release tags. The scripts reject conflicting marker reuse; GHCR tags are not themselves immutable against manual administrator changes. Restrict package write access and do not overwrite or delete release images.
 
 ### C.0.2 Select the pair and run combined tests — minor and major
 
-1. **Local machine, ec2yml folder:** open your existing `release-versions.json`. Only on your first selection, create it by copying `release-versions.example.json`.
-2. Replace frontend `image` and `revision` with values from its build record. Repeat for backend; do not shorten either digest or commit.
-3. In the ec2yml terminal, run `npm ci` on a fresh checkout or when the dependency lockfile changes, then run `npm run release:validate`. It produces `selected-release.json`, a generated record of the selected pair. Do not commit that generated file; it is ignored by Git.
-4. Review, commit and push **`release-versions.json`** in ec2yml. Workflows/scripts are already installed during first-time setup; include them only when intentionally changing them. The combined workflow runs on every branch push and same-repository PR. Fork PRs receive configuration checks only.
-5. **Browser, GitHub:** click ec2yml **Actions** → **Combined browser tests** in the left sidebar → the run matching your push. Check that both `configuration` and `combined-browser` have green checkmarks. To inspect a failure, click the failed job name, then click the failed step to expand its log.
-6. Click the run's **Summary**, scroll to **Artifacts**, and click `combined-test-results-RUN_ID-ATTEMPT` to download it. Extract the ZIP on your computer. `test-results/release-result.json` must say `passed` and contain the intended images, source SHAs, coordinator SHA, run ID and attempt. Browser reports/logs explain failures.
+1. **Local machine, ec2yml:** review the matching `RELEASE_VERSION`, update the version log, then commit and push to **main**. Keep ec2yml on its existing main branch. There are no image references or commit hashes to paste.
+2. You may push ec2yml before the application builds finish. **Combined browser tests** waits up to 30 minutes for both `release-MARKER` GHCR images. Missing images cause waiting; wrong labels, denied access and other registry errors fail the run. It never falls back to `latest` or a previous version.
+3. The resolver checks version/source/revision labels, obtains both immutable digests, and generates `selected-release.json`. The workflow pulls and checks the images again, checks out matching backend test support, and tests that exact pair.
+4. **Browser, GitHub:** open ec2yml **Actions → Combined browser tests → your run**. Both `configuration` and `combined-browser` must pass. A timeout means checking application CI and rerunning the combined workflow once both images are available; it does not deploy anything.
+5. Open **Summary → Artifacts → combined-test-results-RUN_ID-ATTEMPT**. Download and extract the artifact. `selected-release.json` records the shared marker, digests and source revisions; `test-results/release-result.json` must say `passed` and identify that pair, coordinator commit, run ID and attempt.
 
-`release-versions.json` is the committed choice; `selected-release.json` is the run's generated record. They are normally identical when the committed choice is used. Manual workflow inputs can override that choice, making the generated record different. Push only the committed selection file.
+**No local `npm ci` or `npm run release:validate` is required just to submit a release.** GitHub installs the locked test dependencies with `npm ci` and validates the automatically resolved pair in CI. Keep local checks when editing workflow/test code. `release-versions.json` and its example are retained only for legacy local manual checks; CI ignores them. Generated `resolved-release.json` and `selected-release.json` are not committed.
 
-**To start the combined workflow manually — browser, GitHub:**
+**To rerun manually:** ensure the workflow is on the default branch, open **Actions → Combined browser tests → Run workflow**, choose **main**, then click the green **Run workflow** button. There are no image/commit input fields. It uses the marker from the selected coordinator revision. To retest an older candidate without source changes, rerun its original main workflow run while the images still exist.
 
-1. First ensure the workflow file exists on the default branch; otherwise its manual-run control will not appear.
-2. Click ec2yml **Actions** → **Combined browser tests** in the left sidebar.
-3. Click **Run workflow** above the run list to open the input panel. Open the **Branch** selector and choose `main` for a promotable release.
-4. Leave all four image/commit fields empty to use the committed selection, or fill in all four with the intended pair.
-5. Click the green **Run workflow** button inside the panel to submit. This is a second click: opening the panel alone does not start anything.
-6. Refresh the run list if necessary, click the new run, then inspect its jobs and artifact as above.
+Only successful main push/manual runs can be promoted. Same-repository PRs can test; fork PRs get configuration checks only. Application pushes do not push or edit ec2yml automatically: your ec2yml push starts coordination.
 
-Promotion accepts successful main push/manual runs, not PR or development-coordinator runs.
-
-**For a minor update, stop here. For an approved major release, continue to C.0.3 using the successful main run.** A minor update ends here: nothing goes to ECR. Artifact retention is 90 days, subject to repository limits. Download release evidence for longer retention. If evidence expires, test the same GHCR digests again; never rebuild them to obtain a receipt.
+If a combined test fails and an application needs a code fix, increment the candidate marker in all three repositories and repeat. If only the coordinator tests/configuration need fixing, its new main commit may retest the same unchanged application pair. For a test-only update, stop here. For production, continue to C.0.3. Artifacts are retained for 90 days subject to repository settings; download evidence for longer retention.
 
 ### C.0.3 Approve and promote a major release
 
@@ -53,7 +47,7 @@ Promotion accepts successful main push/manual runs, not PR or development-coordi
 1. Click ec2yml **Actions** → **Combined browser tests** → the successful main run for your intended pair. Click **Summary** and confirm both jobs passed.
 2. Copy the run ID from your browser address (`.../actions/runs/123456789`). The downloaded artifact name `combined-test-results-RUN_ID-ATTEMPT` gives the exact attempt number; copy its final number as well.
 3. Click **Actions** again. In the left sidebar, click **Approve major release and promote to ECR**. Click **Run workflow** above the run list.
-4. In the panel, open **Branch** and select `main`. Fill in the run-ID field, attempt-number field and release-version field (for example `v0.8.0`). Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
+4. In the panel, open **Branch** and select `main`. Fill in the run-ID field, attempt-number field and release-version field (for example `v1.0.3` for the tested `1.0.3-rc.1` marker). Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
 5. Click the newly created run. If it is waiting for environment approval, click **Review deployments**, select the checkbox beside **production**, review the test result, and click **Approve and deploy**. Despite that GitHub button's wording, this workflow only promotes images to ECR; it does not deploy to EC2.
 6. Wait for the `promote` job to show a green checkmark. It validates evidence, copies both images with digest preservation and verifies the ECR digests; no build occurs. If it fails, click **promote**, then the red failed step to read its log.
 7. Click **Summary**, scroll to **Artifacts**, and click `promoted-release-VERSION-RUN_ID-ATTEMPT`. Extract the downloaded ZIP and keep `promotion.json`, `release-images.env` and the included test evidence together. Continue to C.0.4 to transfer the files, then C.1 for first deployment or C.2 for redeployment.
@@ -186,7 +180,8 @@ successfully tested pair of immutable image references.
 | GHCR publication denied | packages-write, organisation policy, existing package publishing access. |
 | GHCR pull denied | Both packages grant ec2yml Actions read access. |
 | Private source checkout denied | BACKEND_READ_TOKEN scope, expiry and approval. |
-| No release selected | Complete the manifest or all four manual inputs. |
+| Matching images unavailable | Check that all three markers match, both application tests/publications passed and the packages grant read access. Rerun after publication; never substitute an older tag. |
+| Release marker already used | Increment the candidate suffix in all three repositories and publish both applications. |
 | Promotion rejects evidence | Successful main push/manual run, correct attempt, same workflow/repository, unexpired artifact. |
 | AWS AssumeRole denied | Environment branch rule, exact ARN and trust subject. |
 | Existing ECR tag conflict | Retries must use the same pair; new contents need a new release label. |

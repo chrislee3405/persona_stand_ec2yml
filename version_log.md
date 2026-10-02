@@ -1,5 +1,69 @@
 
 ---
+# version 1.0.3
+
+## Frontend
+
+- automatic continuation of held messages starts after 10 seconds of idle empty input instead of 12
+- smartphone project videos use a transparent tap-to-pause surface with a centre play symbol only while paused
+    - removes the touch highlight and native control overlays from the phone video picture; opted-in playback bars become a seek slider below the frame
+    - desktop controls, mobile media selection and scroll-based playback remain supported
+- missing-fact explanations appear as a separate system message after the persona reply
+- footer displays the release label from the database footer.version field instead of the technology note
+    - missing or blank versions are omitted; copyright and links retain their existing behaviour
+
+## Backend
+
+- readiness holds likely unfinished message groups more readily instead of answering a guessed or partly complete request immediately
+    - explicit pause instructions are not required; a follow-up completing the thought releases the group for a reply
+    - complete requests and greetings still receive replies; short wording or imperfect grammar alone does not trigger a wait
+- response gate requires two distinct exact quotes for contradiction reports, with the opposing claim verified against the current reply or an earlier persona reply
+    - user questions and implied expectations cannot serve as contradiction evidence; different scopes and time horizons are explicitly distinguished
+    - style-only "unnatural" findings do not trigger retries or withhold replies; other substantive rules and the retry limits remain in place
+- generated boundary replies adapt their wording to the current request and prior replies, avoiding repeated refusal scripts while retaining the same substantive limits
+- message.token_usage stores per-stage model usage as JSONB on the triggering user message
+    - records input, output, thinking, cached and provider-total tokens, model names, call counts and timing
+    - preserves separate runs for continuations, application retries, failures and background summaries without duplicating usage onto reply bubbles
+    - unknown provider counts remain null; usage is excluded from prompts and ordinary message loads
+    - bounded best-effort writes preserve concurrent entries and do not prevent replies when telemetry storage fails
+- hypothetical role preparation and learning-priority questions are distinguished from factual questions about current study, commitments and past experience
+- partial factual answers provide supported details and identify specific gaps without asking the visitor to contact the candidate
+- questions with no supported facts receive a brief persona reply and a separate system notice identifying the missing information and suggesting direct contact
+    - both messages publish together and remain in chat history; system notices are excluded from AI context
+    - failed fact verification uses the technical-error path rather than claiming information is absent
+- topic selection retrieves plausible supporting references for broad and role-based questions instead of requiring high-confidence direct matches
+    - keeps selection focused and excludes unrelated topics; grounding still requires evidence for every factual claim
+    - grounding may recognise relevance across references without inventing experience or combining facts into an undocumented achievement
+- verified invite role context reaches reference selection, example reranking and grounding before reply writing
+    - resolves questions about the offered position and selects relevant candidate evidence
+    - approved role facts are labelled separately; job requirements do not establish candidate skills or experience
+    - guest chats and empty descriptions omit role context
+- footer content validation accepts an optional version string; legacy note values remain valid for compatibility
+
+## Release coordination
+
+- frontend, backend and ec2yml share a RELEASE_VERSION marker; every candidate bumps all three repositories, including marker-only component updates
+- successful independent tests publish GHCR images with the matching version tag and source/revision labels
+- an ec2yml push automatically waits up to 30 minutes for both matching images and resolves immutable digests and source revisions, removing manual image/revision copying
+    - missing images never fall back to an older release; invalid metadata or registry access errors stop the run
+    - serialized publication rejects marker reuse across different source commits and reuses images on same-commit reruns
+- combined-test evidence retains the shared marker; promotion checks the release base version and preserves tested digests through ECR and EC2
+    - existing explicit approval and deployment steps remain; local release validation is no longer required before a normal ec2yml push
+
+## Validation and release notes
+
+- release-tool checks passed: 8 publisher tests per application, 15 coordinator Python tests and 20 coordinator JavaScript tests; live GitHub publication/promotion remains unverified
+
+- 14 project-video tests passed for mobile media selection, tap-to-pause/resume, paused-only symbols, seeking and viewport changes; TypeScript and targeted lint checks passed; physical phone rendering remains unverified
+- existing databases require scripts/migrations/20261002_message_token_usage.sql before backend deployment; the additive migration preserves messages and is safe to rerun
+- startup and readiness reject an existing database without the nullable JSONB column; old message usage remains null and no reseeding is required
+- 183 backend tests passed, including all unit tests, PostgreSQL token-usage migration/rerun checks, concurrent persistence, continuations, summaries and chat failure flows; tested against an isolated local PostgreSQL 16 database, not RDS
+- 93 targeted backend tests and 43 frontend chat tests passed, covering invite context, retrieval, grounding, hypothetical role preparation, answer coverage and separate missing-fact notices; live model behaviour remains unverified
+- footer seed uses v1.0.3; no database schema migration is required
+- the label is maintained in site content and does not verify running container versions
+- local development changes; deployment is not confirmed
+
+---
 # version 1.0.2
 
 ## Backend
@@ -62,9 +126,8 @@
 - records local app changes; deployment is not confirmed by this entry
 
 ---
-# version 1.0.0
-
-## All update from 0.7.1 to 0.7.3
+# version 1.0.0 (all updates from 0.7.1 to 0.7.3)
+# Production Readiness
 
 ---
 # version 0.7.3
@@ -344,9 +407,8 @@
     - browser checks reused existing local images; cloud GHCR / ECR publication and EC2 deployment still require the documented account setup
 
 ---
-# version 0.7.0
-
-## All update from 0.6.1 to 0.6.4
+# version 0.7.0 (all updates from 0.6.1 to 0.6.4)
+# Polish & Hardening
 
 ---
 # version 0.6.4
