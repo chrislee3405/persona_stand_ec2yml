@@ -1,3 +1,25 @@
+---
+# version 1.1.0 (all updates from 1.0.1 to 1.0.3)
+# job description orientated reply
+
+Includes the v1.0.1-v1.0.3 changes recorded below, plus the following release changes.
+
+## Written-chat replies
+
+- reply writing targets professional text chat, leads with the answer and avoids spoken filler and repeated thinking-aloud openings
+- hypothetical guidance no longer prescribes an opening phrase; conversation history supplies continuity rather than wording templates
+- the writer receives the last four delivered reply openings independently of summarization, as style context rather than factual evidence
+- minor corrections preserve voice, sentence structure and contractions unless the specific correction requires a change
+- offline conversation-export audit reports repeated openings without blocking delivery
+- local private personality guidance is simplified; applying its separate SQL update is an operator data step, not part of the published image
+
+## Release notes
+
+- all three RELEASE_VERSION markers and frontend package metadata use 1.1.0
+- the local footer seed displays v1.1.0; existing RDS site content requires a separate update
+- 64 targeted backend tests passed for wording context, retrieval, response-gate evidence and reply coverage; live-model improvement remains unverified
+- the token-usage database migration documented below remains required for older databases
+- GitHub publication does not establish ECR promotion, EC2 deployment or RDS updates
 
 ---
 # version 1.0.3

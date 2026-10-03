@@ -4,7 +4,7 @@
 
 1. Every frontend/backend branch push runs its independent tests. PR events also test but do not publish.
 2. Passing branch builds publish once to `ghcr.io/OWNER/persona_stand_front` or `persona_stand_back`, tagged `sha-FULL_COMMIT` and `release-MARKER`, and labelled with source repository, full SHA and `RELEASE_VERSION`. Reruns reuse an existing commit image. Keep tags/images; new contents require a new commit.
-3. All three repositories commit the same `RELEASE_VERSION` (initially `1.0.3-rc.1`). An ec2yml push waits up to 30 minutes for both matching published images, then automatically resolves their **digests** and source SHAs. Even a component without functional changes gets a marker-only commit and new tested image.
+3. All three repositories commit the same `RELEASE_VERSION` (initially `1.1.0-rc.1`). An ec2yml push waits up to 30 minutes for both matching published images, then automatically resolves their **digests** and source SHAs. Even a component without functional changes gets a marker-only commit and new tested image.
 4. One combined workflow runs the same Playwright suite for every selected pair, whether the update is minor or major. It starts both exact images on a GitHub-hosted runner with disposable PostgreSQL, fictional data and fake Gemini. No EC2 or ECR is needed.
 5. Minor updates stop with GHCR images and test evidence. An approved major release copies the exact successfully tested images into ECR with digest preservation, without rebuilding.
 6. EC2 deploys only the promoted ECR digests and writes a deployment record including the full promotion/test chain.
@@ -41,11 +41,11 @@ Application pushes publish only after their tests pass. Your ec2yml push starts 
 
 ### Updating a candidate
 
-1. Set the same fresh marker, such as `1.0.3-rc.1`, in all three repositories.
+1. Set the same fresh marker, such as `1.1.0-rc.1`, in all three repositories.
 2. Commit and push both applications, including a marker-only change when a component has no functional changes.
 3. Commit the marker and version log to ec2yml main and push. CI waits for both images and tests the resolved pair.
-4. For an application fix after publication, bump all three markers to `1.0.3-rc.2` and publish both again. Reusing a marker for a different source commit is rejected. Same-commit reruns reuse the original image.
-5. Retain passing evidence for a test-only update, or explicitly approve production promotion. `1.0.3-rc.N` can be promoted as `v1.0.3`; a different base version is rejected.
+4. For an application fix after publication, bump all three markers to `1.1.0-rc.2` and publish both again. Reusing a marker for a different source commit is rejected. Same-commit reruns reuse the original image.
+5. Retain passing evidence for a test-only update, or explicitly approve production promotion. `1.1.0-rc.N` can be promoted as `v1.1.0`; a different base version is rejected.
 
 For setup, use [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-time-setup); for each release, use [Part C.0](Part_C.md#c0-automated-tests-for-every-update). Applications may use development branches; keep ec2yml on main. Existing package Actions access and the optional private backend checkout token still apply.
 
@@ -63,7 +63,7 @@ Same-repository PRs and branch pushes run the suite; fork PRs run configuration 
 
 `combined-test-results-RUN_ID-ATTEMPT` contains `selected-release.json`, browser reports/logs and `test-results/release-result.json`: status, shared release marker, both digests/SHAs, coordinator commit, repository, run ID and attempt. A failed or skipped run is never eligible.
 
-To release, manually run **Approve major release and promote to ECR** on main, check the approval checkbox. `find-passing-release.mjs` automatically finds the newest successful trusted combined run for the current ec2yml commit and its exact attempt, then derives `v1.0.3` from `1.0.3-rc.N`. There are no run-ID, attempt or version inputs. The downloaded evidence must match the full marker and coordinator commit before AWS credentials are obtained; missing/expired evidence or mismatches stop promotion without an older fallback. The production environment supplies an additional review gate where configured. The workflow fetches that exact run attempt through GitHub's API and its named artifact, rejects mismatched/failed/untrusted evidence, and uses `skopeo copy --all --preserve-digests` for both images. It verifies destination digests before issuing `promotion.json` and `release-images.env`. No Docker build occurs. ECR release tags must be immutable.
+To release, manually run **Approve major release and promote to ECR** on main, check the approval checkbox. `find-passing-release.mjs` automatically finds the newest successful trusted combined run for the current ec2yml commit and its exact attempt, then derives `v1.1.0` from `1.1.0-rc.N`. There are no run-ID, attempt or version inputs. The downloaded evidence must match the full marker and coordinator commit before AWS credentials are obtained; missing/expired evidence or mismatches stop promotion without an older fallback. The production environment supplies an additional review gate where configured. The workflow fetches that exact run attempt through GitHub's API and its named artifact, rejects mismatched/failed/untrusted evidence, and uses `skopeo copy --all --preserve-digests` for both images. It verifies destination digests before issuing `promotion.json` and `release-images.env`. No Docker build occurs. ECR release tags must be immutable.
 
 Retain GHCR originals and immutable ECR release tags, plus downloaded evidence. Workflow artifacts have 90-day retention subject to repository settings. If evidence expires, rerun combined tests on the same images; never rebuild. A partially failed promotion can leave one copied image, but emits no successful receipt. Retry the same pair/label; never overwrite a label with other contents.
 

@@ -9,16 +9,16 @@ Complete the one-time GitHub/package/IAM setup in [Part A.6](Part_A.md#a6-automa
 | Test a candidate | C.0.1 set the shared marker and publish both applications → C.0.2 automatically resolve and test the matching pair. | Tested images stay in GHCR; production is unchanged. |
 | Release to production | The same tests → C.0.3 approved promotion → C.0.4 transfer → C.1 or C.2 deployment. | The exact tested images are copied to ECR and deployed on EC2. |
 
-The existing workflow is called **Approve major release and promote to ECR**; it can promote an approved patch release such as `v1.0.3` too. The approval and deployment steps are explicit for every production release.
+The existing workflow is called **Approve major release and promote to ECR**; it can promote an approved patch release such as `v1.1.0` too. The approval and deployment steps are explicit for every production release.
 
 ### C.0.1 Push application changes with a shared release marker
 
-1. **Local machine:** put the same value in the root `RELEASE_VERSION` file in **all three repositories**. This update starts with `1.0.3-rc.1`. Keep one line with no `v` prefix. The candidate suffix distinguishes builds while the public app version remains `v1.0.3`.
+1. **Local machine:** put the same value in the root `RELEASE_VERSION` file in **all three repositories**. This update starts with `1.1.0-rc.1`. Keep one line with no `v` prefix. The candidate suffix distinguishes builds while the public app version remains `v1.1.0`.
 2. Commit and push both application repositories, including their markers. Even if only the backend has functional changes, the frontend needs its marker-only commit, tests and new image. The application repositories can use your existing development branches.
-3. Both application workflows run independent tests before publishing GHCR images. Each image has a `sha-FULL_COMMIT` tag and a `release-1.0.3-rc.1` tag, plus source repository, source revision and version labels. Push order does not matter.
+3. Both application workflows run independent tests before publishing GHCR images. Each image has a `sha-FULL_COMMIT` tag and a `release-1.1.0-rc.1` tag, plus source repository, source revision and version labels. Push order does not matter.
 4. In GitHub **Actions**, check **Test and publish frontend** and **Test and publish backend**. Their summaries and `image.json` artifacts remain available for inspection; you no longer copy their digests or revisions into ec2yml.
 
-**Every new candidate needs a fresh marker.** After any further application commit, use `1.0.3-rc.2` in all three repositories, then `.3`, and so on. This includes marker-only or documentation-only commits in an application repository once its earlier marker was published. Do not reuse a published marker for another commit. Rerunning the same commit reuses its image; partial publication can finish on a rerun. Publication is serialized within each application repository to prevent concurrent marker writes. If a queued publication is cancelled by a newer run, rerun the intended application workflow.
+**Every new candidate needs a fresh marker.** After any further application commit, use `1.1.0-rc.2` in all three repositories, then `.3`, and so on. This includes marker-only or documentation-only commits in an application repository once its earlier marker was published. Do not reuse a published marker for another commit. Rerunning the same commit reuses its image; partial publication can finish on a rerun. Publication is serialized within each application repository to prevent concurrent marker writes. If a queued publication is cancelled by a newer run, rerun the intended application workflow.
 
 Keep published commit and release tags. The scripts reject conflicting marker reuse; GHCR tags are not themselves immutable against manual administrator changes. Restrict package write access and do not overwrite or delete release images.
 
@@ -47,7 +47,7 @@ If a combined test fails and an application needs a code fix, increment the cand
 1. Click ec2yml **Actions** → **Combined browser tests** → the successful main run for your intended pair. Click **Summary** and confirm both jobs passed.
 2. Confirm the current ec2yml main commit has passed combined tests. Promotion automatically finds its newest successful trusted run and exact attempt; there is no run ID to copy.
 3. Click **Actions** again. In the left sidebar, click **Approve major release and promote to ECR**. Click **Run workflow** above the run list.
-4. In the panel, open **Branch** and select `main`. The release label is derived from `RELEASE_VERSION` (`1.0.3-rc.1` becomes `v1.0.3`); there are no run-ID, attempt or version fields. Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
+4. In the panel, open **Branch** and select `main`. The release label is derived from `RELEASE_VERSION` (`1.1.0-rc.1` becomes `v1.1.0`); there are no run-ID, attempt or version fields. Check **I approve copying this tested pair to production ECR**. Click the green **Run workflow** button inside the panel.
 5. Click the newly created run. If it is waiting for environment approval, click **Review deployments**, select the checkbox beside **production**, review the test result, and click **Approve and deploy**. Despite that GitHub button's wording, this workflow only promotes images to ECR; it does not deploy to EC2.
 6. Wait for the `promote` job to show a green checkmark. It validates evidence, copies both images with digest preservation and verifies the ECR digests; no build occurs. If it fails, click **promote**, then the red failed step to read its log.
 7. Click **Summary**, scroll to **Artifacts**, and click `promoted-release-VERSION-RUN_ID-ATTEMPT`. Extract the downloaded ZIP and keep `promotion.json`, `release-images.env` and the included test evidence together. Continue to C.0.4 to transfer the files, then C.1 for first deployment or C.2 for redeployment.
@@ -68,10 +68,10 @@ A failed copy does not create a successful receipt. One image may already have c
 6. **Windows File Explorer:** open **Downloads**, right-click the ZIP, click **Extract All…**, choose a destination and click **Extract**. Open the extracted folder and confirm it contains `promotion.json` and `release-images.env`. Keep the rest of the evidence too.
 7. Open `promotion.json` in your text editor to check the release version, source commits and image pair. Close it without editing. Transfer the files only after `~/app` exists on EC2 (created in C.1 below).
 
-**Where: your local PowerShell terminal, after extraction and EC2 folder creation.** Run the following, replacing the paths, login name and IP with your actual values. Amazon Linux usually uses `ec2-user`; use your existing SSH login name if different.
+**Where: your local PowerShell terminal, after extraction and EC2 folder creation.** Run the following, replacing the key/file paths and IP with your actual values. Your Ubuntu EC2 instance uses the SSH login name `ubuntu`.
 
 ```powershell
-scp -i "C:/path/to/your-key.pem" "C:/path/to/extracted/promotion.json" "C:/path/to/extracted/release-images.env" ec2-user@<ec2-public-ip>:~/app/
+scp -i "C:/path/to/your-key.pem" "C:/path/to/extracted/promotion.json" "C:/path/to/extracted/release-images.env" ubuntu@<ec2-public-ip>:~/app/
 ```
 
 Press **Enter** to run it. If this is your first SSH connection, verify the host fingerprint against your trusted connection information before accepting it. A completed transfer returns to the terminal prompt. In your **EC2 SSH terminal**, run `ls -l ~/app/promotion.json ~/app/release-images.env` to confirm both files arrived. SCP is a terminal command, not a button on GitHub or AWS.

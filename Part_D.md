@@ -288,7 +288,7 @@ INSERT INTO site_content (section, content) VALUES (
   'footer',
   $j${
     "owner": "<name in the copyright line — omit to reuse personal_statement.owner>",
-    "version": "<release label, e.g. v1.0.3>",
+    "version": "<release label, e.g. v1.1.0>",
     "links": [
       { "label": "GitHub",   "href": "https://github.com/<handle>" },
       { "label": "LinkedIn", "href": "https://www.linkedin.com/in/<handle>" }

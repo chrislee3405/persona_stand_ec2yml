@@ -13,7 +13,7 @@ Start with [Part A.6](Part_A.md#a6-automated-testing-and-github-actions--first-t
 for the step-by-step first-time GitHub and AWS testing setup.
 See [TESTING.md](TESTING.md) for independent frontend/backend checks and the
 combined Playwright suite owned by this repository. Commit the same root
-`RELEASE_VERSION` in all three repositories (initially `1.0.3-rc.1`), then push
+`RELEASE_VERSION` in all three repositories (initially `1.1.0-rc.1`), then push
 both applications and ec2yml main. Even a component without code changes gets
 a marker-only commit. CI waits for matching tested GHCR images and automatically
 resolves their digests and source commits; no copying or local release validation
@@ -21,7 +21,7 @@ is required. Approved releases copy the tested images unchanged to ECR. EC2 pull
 only promoted ECR digests using `promotion.json`; see [Part C](Part_C.md).
 Promotion automatically finds passing evidence for the exact marker and current ec2yml commit, derives the ECR release label, and requires your approval. No run ID or attempt needs copying.
 Use a fresh candidate suffix for another application build. The app's displayed
-version remains `v1.0.3`; candidate markers identify builds, not database content.
+version remains `v1.1.0`; candidate markers identify builds, not database content.
 
 > **Important:** Replace every value surrounded by `<...>` with your own value. Do not commit passwords, private keys, AWS access keys, Google service-account private keys, or database credentials.
 
