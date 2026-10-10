@@ -21,7 +21,10 @@ test('consent gates sending, a guest reply survives refresh, and withdrawal bloc
   await expect(page.getByRole('log').getByText(reply, { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('log').getByText(reply, { exact: true })).toBeVisible();
-  await expect(page.getByText(result.conversationId, { exact: true })).toBeVisible();
+  await expect(page.getByRole('log').getByText(
+    `Conversation reference (quote it to request deletion): ${result.conversationId}`,
+    { exact: true },
+  )).toBeVisible();
   await page.getByRole('button', { name: 'Disagree with consent', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Test consent' })).toBeVisible();
   // Use this browser's cookies to also verify the real API enforces withdrawal.

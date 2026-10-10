@@ -64,7 +64,8 @@
 - the 10 October general audit passed 86 frontend tests, frontend lint/build, fresh frontend/backend Docker builds and 28 release-tool tests
 - the complete backend suite ran against isolated PostgreSQL: 356 passed and one failed because the fresh-seed test expects the previous provider defaults
 - after correcting the fresh-seed test, the complete backend suite passed all 357 tests against disposable PostgreSQL; no runtime provider configuration was changed
-- the original browser suite passed seven checks and failed one outdated conversation-reference selector; an audit-only copy with that selector corrected passed all eight checks, including consent withdrawal, invitation handling, message recovery and chat-log privacy; the repository assertion still needs updating
+- the original browser suite passed seven checks and failed one outdated conversation-reference selector; an audit-only copy with that selector corrected passed all eight checks, including consent withdrawal, invitation handling, message recovery and chat-log privacy
+- the repository browser assertion now checks the full conversation-reference system message inside the chat log after refresh; all eight browser tests passed against fresh local images, including API-enforced consent withdrawal and container-log privacy
 - desktop and 390-pixel phone inspection found the local homepage and project sheet readable, with no homepage horizontal overflow or broken loaded images; physical keyboard behaviour and the public deployment were not verified
 - newer targeted live grounding/split regressions recorded 24 grounding and 54 splitting cases without flagged errors; separate hybrid evaluations still found unsupported project-ownership claims, so these checks do not establish general factual accuracy
 - this entry records local changes; it does not establish publication, ECR promotion, EC2 deployment or RDS migration
