@@ -1,4 +1,75 @@
 ---
+# version 1.1.1
+# database-controlled AI providers, orchestration quality and mobile chat
+
+## Backend
+
+- model-output validation no longer compares free-text answer labels, review quotations or split-message wording; fixed-choice and structural checks remain, with content preservation requested through prompts
+
+- each model call stores returned text in its request entry under message.token_usage, including structured JSON before parsing, retries and summary runs; absent output remains null and refusal text is retained when returned
+- local Compose automatically creates missing tables and seeds missing records before starting the backend; seed failures prevent application startup, existing records are preserved, and production startup is unchanged
+- model_configuration stores per-provider presets; is_active now enables a provider for selection, so several providers can be enabled with distinct positive use_priority values
+- shared AI routing supports Gemini, OpenAI and Grok; runtime model names are removed from constants.py
+- each stage checks enabled providers in ascending priority and uses the first non-null stage model; only when none specifies a stage model does it use the highest-priority enabled provider's default model
+- grounding claims contain source_quote, statement, status and answer_part; source_quote preserves the original excerpt and statement proposes a direct restatement or reasonable deduction; Python checks structure and fixed-choice values without comparing text
+- reply writing uses the quote and proposed statement; the AI gate checks whether the deduction is supported and whether the reply preserves its meaning, without receiving original selected documents; no grounding correction retry is added
+- shared prompts separate documentary evidence, behavioural guidance and history; historical AI replies cannot independently establish facts, behavioural approaches need no documented incident, and intended benefits must not become proven outcomes
+- requested depth takes priority over first mention of a topic; introductions stay focused and project explanations address the requested user benefit
+- the gate receives relevant personality/scenario guidance and reviews the current rewritten reply; repair instructions target the specific rejected claims
+- grounding recognises documented development aims as evidence for broad learning/improvement questions without requiring a named course or tool
+- local document and question-bank seeds replace ambiguous pronouns with explicit referents; existing database rows require a separate content update because seeding does not overwrite them
+- reply regeneration uses the reply model, independently of the response-checking model; retries do not automatically switch providers or fall back to the default model
+- context gathering loads an immutable configuration snapshot with its initial reads and reuses it throughout the turn; background summaries load their own snapshot
+- context-reading transactions end before concurrent AI calls and again before grounding/generation, returning application connections to the pool; unexpected pending ORM writes prevent an implicit commit
+- provider adapters support asynchronous text and structured responses, output limits, timeouts and provider/model usage records
+- fresh seeds enable Gemini at priority 1 for readiness, topics, grounding, writing, rewrites, review and splitting using gemini-3.5-flash-lite, plus gemini-2.5-flash for summaries; Gemini's example model is null so OpenAI at priority 2 uses gpt-4.1-mini for fixed-choice example selection
+- seeding and migration reruns preserve existing owner settings; API outage failover is not implemented
+- topic/reference selection failures are distinguished from a successful search with no matches; failed selection, grounding, writing or factual review stops the reply through the retryable technical-error path rather than claiming supporting information is absent
+- model-stage failures record the stage, reason and chosen fallback without logging provider exception text, prompts or replies; optional example selection can omit an example, readiness can continue to the normal checks, splitting can retain the full checked reply, and failed summaries preserve saved history
+- failure handling adds no extra AI calls or automatic retries
+- tested shorter instructions are retained for readiness, topic selection, example selection and summaries; a conservative writer hybrid retains factual safeguards, while more aggressive grounding and reviewer rewrites were rejected for evidence-handling regressions
+- grounding distinguishes ordinary AI-use, debugging, documentation and collaboration approaches from factual requests for tool names, usage quantities or past incidents; mixed questions still require evidence for their factual parts
+- reply splitting simulates natural pauses after completed meaning, including successive thoughts on the same topic; unfinished setups stay with their explanation, message lengths may vary, and the turn ceiling is not a target
+- splitter prompts request exact character/order preservation, including separator whitespace; the runtime still validates structure without enforcing textual equality
+
+## Frontend
+
+- chat bubbles reserve their full text area while expanding, reveal text after expansion and smoothly shift existing bubbles; reduced-motion handling is included
+- bubble entrance animation does not remove the existing dispatch hold or fragment reveal delays
+- mobile chat follows the visible viewport above browser controls and the keyboard, includes safe-area padding and limits scrolling to the message log; narrow and short phone layouts use a compact header with a home link
+- the conversation deletion reference appears as a persisted system message in the chat history with a stable ID to avoid duplicate notices; consent withdrawal remains available below the chat
+- displayed persona bubbles trim leading/trailing whitespace to remove blank lines at split boundaries; internal paragraph breaks, user messages and stored reply text are preserved
+
+## AWS configuration
+
+- production Compose passes OPENAI_API_KEY from the EC2 deployment environment into the backend; credentials remain outside database configuration
+- the owner can switch settings directly in RDS through pgAdmin; a separate JSON settings file is not required by the running app
+- setup guides now cover automatic local seeding, database-controlled stage selection, explicit production initialization, the ordered provider migrations and model response text stored in usage records; obsolete DEFAULT_MODEL instructions are removed and the missing production Grok key mapping is documented
+
+## Validation and release notes
+
+- existing databases require scripts/migrations/20261005_model_configuration.sql, scripts/migrations/20261006_model_configuration_use_priority.sql, scripts/migrations/20261007_model_configuration_providers.sql and scripts/migrations/20261008_model_configuration_selection.sql before deploying this backend
+- existing configuration rows must be updated explicitly to switch providers; changing a seed does not switch an existing deployment
+- the provider/configuration implementation passed 325 backend tests, followed by 34 focused checks, including isolated PostgreSQL connection-release and configuration-update coverage
+- subsequent use_priority changes passed 10 unit tests, seed dry-run validation and PostgreSQL DDL compilation; the priority migration tests were added but could not run because Docker was stopped
+- OpenAI seed/migration defaults and AWS environment mapping were checked; live OpenAI/Grok calls and AWS deployment remain unverified
+- stage/provider selection passed 85 unit checks and 15 isolated database migration/integration checks; subsequent interpretation handoff, stage recovery and token persistence checks passed 111 tests
+- stage-failure handling was verified in the recruiter-fit thread with 301 checks using fake models and a disposable database
+- the final completed-thought splitter comparison passed 96/96 live checks against 83/96 for the previous prompt, plus 19 focused unit checks; these finite fictional cases do not establish ideal grouping for every reply
+- historical prompt-compression percentages no longer describe the current prompt set: later grounding and splitter repairs restored instructions and examples to address observed quality regressions
+- the 8 October focused follow-up audit passed 146 unit checks; original live-model cases have not been replayed against the latest statement schema, and these targeted runs do not establish a passing complete suite
+- the fresh-seed integration test now checks both enabled providers, their priorities and stage selection, replacing the old single-enabled-provider expectation
+- confirmed local issues include missed relevant grounding evidence, a failed Gemini review call, silent input truncation, lost unsent drafts, programmed display delays and queue time outside the generation deadline
+- split wording preservation now relies on model instructions; syntactically valid changed or reordered split text can bypass the reviewed reply's wording
+- the 10 October general audit passed 86 frontend tests, frontend lint/build, fresh frontend/backend Docker builds and 28 release-tool tests
+- the complete backend suite ran against isolated PostgreSQL: 356 passed and one failed because the fresh-seed test expects the previous provider defaults
+- after correcting the fresh-seed test, the complete backend suite passed all 357 tests against disposable PostgreSQL; no runtime provider configuration was changed
+- the original browser suite passed seven checks and failed one outdated conversation-reference selector; an audit-only copy with that selector corrected passed all eight checks, including consent withdrawal, invitation handling, message recovery and chat-log privacy; the repository assertion still needs updating
+- desktop and 390-pixel phone inspection found the local homepage and project sheet readable, with no homepage horizontal overflow or broken loaded images; physical keyboard behaviour and the public deployment were not verified
+- newer targeted live grounding/split regressions recorded 24 grounding and 54 splitting cases without flagged errors; separate hybrid evaluations still found unsupported project-ownership claims, so these checks do not establish general factual accuracy
+- this entry records local changes; it does not establish publication, ECR promotion, EC2 deployment or RDS migration
+
+---
 # version 1.1.0 (all updates from 1.0.1 to 1.0.3)
 # job description orientated reply
 

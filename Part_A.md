@@ -250,6 +250,12 @@ Note the **Endpoint** and **Port** shown on the instance's **Connectivity & secu
 
 ## A.5 GCP / Vertex AI Setup
 
+This configures the Vertex/Gemini adapter. The fresh seed also selects OpenAI
+for example IDs; configure `OPENAI_API_KEY` separately in Part B.2 locally or
+Part C.1 on EC2. Provider/model routing is stored in `model_configuration`, not
+in GCP settings. OpenAI and Grok do not use these Vertex credentials; current
+production Compose requires an additional environment mapping for Grok.
+
 ### Create a project
 Go to GCP Console (browser) — console.cloud.google.com
 Project dropdown → **New Project**. Note both the **Project ID** (string) and, later, the **Project Number** (numeric) — they are different values used in different places.

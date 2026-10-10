@@ -91,6 +91,7 @@ Run in EC2 instance terminal — paste into the `.env` file you just opened with
 DATABASE_URL=postgresql://<master-username>:<master-password>@<rds-endpoint>:5432/<db-name>
 SESSION_SECRET_KEY=<long-random-string — see below>
 GCP_PROJECT_ID=<project-id-or-number-matching-what-your-code-expects>
+OPENAI_API_KEY=<your-openai-api-key-if-selected>
 AWS_REGION=ap-southeast-2
 # HTTPS -- leave these out until Part A, "HTTPS with Let's Encrypt", says to add them:
 # TLS_DOMAIN=<your-domain>
@@ -112,13 +113,48 @@ This key signs the session cookie, which is what carries a visitor's consent rec
 
 Before deploying, follow C.0.3 to approve and promote a successful GHCR pair. Download the artifact from that **successful promotion run**, not from the combined-test run. Transfer its `promotion.json` and `release-images.env` to `~/app` on EC2 (for example using your usual SCP/SFTP client). Keep the original artifact as release evidence. Do not edit these generated files or accept receipts from an untrusted source.
 
-`release-images.env` contains ECR_ACCOUNT_ID, AWS_REGION, FRONTEND_DIGEST and BACKEND_DIGEST. Production Compose constructs only ECR references. Keep database/session/GCP secrets in `.env`.
+`release-images.env` contains ECR_ACCOUNT_ID, AWS_REGION, FRONTEND_DIGEST and BACKEND_DIGEST. Production Compose constructs only ECR references. Keep database/session/provider secrets in `.env`.
+
+AI routing comes from RDS's `model_configuration`, not constants or image tags.
+Several providers can be enabled with distinct positive priorities. Each stage
+uses the first enabled explicit stage model; if none exists, it uses the
+highest-priority enabled provider's default. API failures do not switch providers.
+See [backend AI configuration](https://github.com/chrislee3405/persona_stand_back/blob/main/docs/ai-configuration.md)
+for transactional SQL, model fields and exclusive/mixed-provider selection.
+
+The fresh seed uses Vertex/Gemini plus OpenAI for example selection, so that setup
+needs both GCP authentication and `OPENAI_API_KEY`. Existing migrations preserve
+the deployed selection; inspect RDS before choosing which keys to configure.
+Current production Compose passes `OPENAI_API_KEY`, but **does not pass
+`XAI_API_KEY`**. Grok requires a reviewed `XAI_API_KEY=${XAI_API_KEY:-}` mapping
+in the backend environment before activation; putting the key in EC2's `.env`
+alone is insufficient. Recreate the backend after changing environment keys.
+Database-only model changes affect new turns without a restart. The activation
+helper is available in the source checkout/local bind mount, not in the normal
+runtime image; production configuration can use the documented SQL after access
+and schema support are verified separately.
 
 The deployment script needs Python 3 and Docker Compose with `up --wait`. If Python is missing on Amazon Linux, install it with `sudo dnf install -y python3`. The existing EC2 instance role supplies ECR read access; no GHCR login is needed.
 
 ⚠️ `DATABASE_URL` here must point **directly at the RDS endpoint on port 5432** — not the local compose database from Part B (`db:5432`) or an SSH tunnel address. Omitting this variable entirely stops the backend at startup with `RuntimeError: DATABASE_URL is not set`.
 
-⚠️ **A new database has no consent policy, invite codes or persona data.** The chatroom refuses every message until a consent policy row exists — see Part D.2, *Seed the consent policy, invite codes and persona data*.
+⚠️ **A new production database requires explicit initialization before deployment.**
+Startup requires a valid enabled `model_configuration`; production does not run
+the local Compose seed command automatically. For an empty database, use the
+approved backend image to create the schema and seed its public policy/model
+presets with this one-off command, after reviewing the bundled consent wording.
+Authenticate to ECR using the login command below first; the approved
+`promotion.json` and `release-images.env` must already be on the instance:
+
+```bash
+docker compose --env-file .env --env-file release-images.env -f docker-compose.ec2.yml run --rm --no-deps backend python -m app.models.seed.load
+```
+
+This uses the image's distributable seed files; private site/persona data and
+invite codes are not bundled. Review the selected providers and approved consent
+policy, then load production content through Part D.2 before opening the site.
+Do not mount an unreviewed local seed directory into production. An existing
+database needs upgrade migrations instead; seeding is not a schema upgrade.
 
 > **There is no `VITE_API_URL`.** Earlier versions of this guide listed one. The frontend calls relative `/api/...` paths and nginx proxies them to the backend container, so no API URL is configured anywhere — and it could not be set at runtime even if it were needed, because Vite inlines `VITE_*` values at **build** time, inside the Docker build in GitHub Actions.
 
@@ -141,7 +177,7 @@ For a minor update, stop after the combined tests: nothing needs changing on EC2
 1. Run the same combined workflow for the intended GHCR pair on ec2yml main.
 2. Manually approve and run promotion on main; it automatically selects matching passing evidence (C.0.3).
 3. Follow **C.0.4 Download and transfer the approved release** above: click the successful promotion run → **Summary** → its artifact name, extract the ZIP, verify the release, then use the local SCP command to transfer `promotion.json` and `release-images.env` to `~/app`.
-4. Back up production data before deploying. For an existing database, stop the old backend before schema changes and apply the selected backend release's SQL migrations. For this release these are `20260917_site_media.sql` (if the media rename is outstanding) and `20260920_conversation_last_handled_index.sql`. Follow that release's `scripts/migrations/README.md`, using `psql -v ON_ERROR_STOP=1` and the intended PostgreSQL connection. Do not run the old backend after the cursor backfill. Fresh databases get the current schema at startup. Preserve the accepted behavior of already-migrated legacy cursors; do not reset them as part of redeployment.
+4. Back up production data and stop the old backend before schema changes. Apply outstanding migrations from the selected backend release in chronological order: `20260917_site_media.sql`, `20260920_conversation_last_handled_index.sql`, `20261002_message_token_usage.sql`, `20261005_model_configuration.sql`, `20261006_model_configuration_use_priority.sql`, `20261007_model_configuration_providers.sql`, then `20261008_model_configuration_selection.sql`. Follow that release's `scripts/migrations/README.md`, using `psql -v ON_ERROR_STOP=1` and the intended PostgreSQL connection. Do not run the old backend after the cursor backfill. The provider migrations preserve existing settings and do not switch routing to the fresh seed defaults. Fresh production databases require the explicit initialization in C.1. Do not reset already-migrated cursors or replace owner settings during redeployment.
 5. Run the commands below. The script validates the receipt, pulls only ECR digests, starts both services, verifies their actual image references, and writes `deployment-records/TIMESTAMP.json` with the full source-to-deployment chain.
 6. Confirm `/api/health/ready` returns 200 (required database schema is readable), then test a new guest conversation and an invite conversation. A schema failure prevents backend startup; `/docs` is not a readiness check. Save that deployment record alongside the original promotion/test evidence off the EC2 instance. Open the live site, check consent and chat, and inspect logs. Running containers alone do not establish full application health.
 

@@ -381,7 +381,13 @@ INSERT INTO site_media (section, description, media_path) VALUES
 
 ### Seed the consent policy, invite codes and persona data
 
-Not site content, but a new database needs all three before the chatroom is useful, and **nothing creates them automatically** — the backend creates empty tables on startup and no rows.
+For production, these records are separate from site content. Complete the
+explicit schema and public-preset initialization in Part C.1 first, including a
+valid enabled `model_configuration`. Production startup does not automatically
+seed records. Local Compose does seed available files automatically, so do not
+copy its startup behaviour or private local seed directory into an RDS setup.
+An invite code is optional for guest chat; approved consent and persona evidence
+are needed before the chatroom can be useful to visitors.
 
 **Consent policy — required.** With no row, the chatroom shows "Consent terms are currently unavailable" and refuses every message. Write new wording as a **new** row with a new version; never edit an existing one, or past `consent_record` rows stop meaning what they recorded.
 

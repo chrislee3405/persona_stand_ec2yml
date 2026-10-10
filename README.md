@@ -54,12 +54,21 @@ Internet
    │                            ├── the React SPA
    │                            └── /api/ ──► backend container — FastAPI :8000 (not published)
    │                                                 ├── Amazon RDS (PostgreSQL)
-   │                                                 └── Google Vertex AI (Gemini)
+   │                                                 └── selected AI APIs (Vertex Gemini / OpenAI / Grok)
    │
    └── HTTPS ────────────────► CloudFront ──► S3   (images, video, CV)
 ```
 
 nginx inside the frontend container is the reverse proxy: the browser calls relative `/api/...` paths on the same origin, so no backend address is ever built into the frontend, and the backend port is never exposed on the host.
+
+Provider and per-stage model selection live in PostgreSQL's `model_configuration`.
+The fresh local seed enables Gemini for most stages and OpenAI for example
+selection. Multiple enabled providers are checked in priority order; this is not
+API outage failover. Local startup seeds missing records automatically, while
+production initialization and upgrades are explicit operator steps. See
+[Part B.3](Part_B.md#b3-ai-credentials-and-database-configuration) for credentials
+and selection, and [Part C.1](Part_C.md#c1-first-deployment-to-a-new-ec2-instance)
+for the production boundary, including the additional mapping needed for Grok.
 
 HTTPS terminates in that same nginx, with a Let's Encrypt certificate that certbot on the instance issues and renews (Part A, *HTTPS with Let's Encrypt*). The frontend image serves plain HTTP until `TLS_DOMAIN` is set in the instance's `.env`, so the image CI tests over HTTP is the one production runs over HTTPS. Keep `SESSION_COOKIE_SECURE=false` until HTTPS works end to end (see the note in `docker-compose.ec2.yml`).
 

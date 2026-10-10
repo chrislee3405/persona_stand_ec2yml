@@ -34,5 +34,12 @@ evidence/
 deployment-records/
 
 __pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local debug and temporary files.
+*.log
+*.tmp
+*.temp
 
 resolved-release.json
