@@ -1,4 +1,27 @@
 ---
+# version 1.1.2
+# portfolio card styling, chat refinements and deployment tools
+
+## Frontend
+
+- education and certification card borders fade toward the right to distinguish these non-clickable cards from buttons; text, dates and left accents remain clear
+- the conversation reference is placed before the first generated persona reply, including when React batches the assigned ID and reply; older saved chats recover this ordering on reload while retaining the initial greeting
+- on phone layouts, focusing the chat composer and subsequent keyboard/message-area resizing scroll the conversation to the latest message; unfocused reading position is preserved and listeners are removed on leaving the chat
+
+## AWS configuration
+
+- added an explicit SQL exporter to synchronize all local seed files with RDS, retaining absent records and website version history; matching values use the seeds, provider settings and consent wording are included, and corpus_cache is cleared transactionally for regeneration
+- EC2 deployment can select an exact ECR release tag with deploy_release.py --tag, resolving both repositories to immutable digests before changing containers; no promotion receipt upload is required for this route, which records tag selection without claiming GitHub test-evidence validation
+
+## Validation and release notes
+
+- conversation-reference ordering passed 88 frontend tests, build and lint; mobile composer scrolling passed five focused tests, build and lint; physical phone keyboard behaviour remains unverified
+- education and certification card styling was visually checked in the local preview
+- seed synchronization passed a disposable PostgreSQL check for insert/update, repeat execution, priority swaps, cache clearing and whole-transaction rollback; no RDS changes were performed
+- tag deployment passed all 12 deployment validation tests, including exact tag resolution, missing-image failure, metadata validation and rendered production logging checks; live AWS deployment remains unverified
+- these changes follow the committed v1.1.1 release; rebuilding and deploying updated images remains a separate step
+
+---
 # version 1.1.1
 # database-controlled AI providers, orchestration quality and mobile chat
 
@@ -35,10 +58,10 @@
 ## Frontend
 
 - chat bubbles reserve their full text area while expanding, reveal text after expansion and smoothly shift existing bubbles; reduced-motion handling is included
+- displayed persona bubbles trim leading/trailing whitespace to remove blank lines at split boundaries; internal paragraph breaks, user messages and stored reply text are preserved
 - bubble entrance animation does not remove the existing dispatch hold or fragment reveal delays
 - mobile chat follows the visible viewport above browser controls and the keyboard, includes safe-area padding and limits scrolling to the message log; narrow and short phone layouts use a compact header with a home link
 - the conversation deletion reference appears as a persisted system message in the chat history with a stable ID to avoid duplicate notices; consent withdrawal remains available below the chat
-- displayed persona bubbles trim leading/trailing whitespace to remove blank lines at split boundaries; internal paragraph breaks, user messages and stored reply text are preserved
 
 ## AWS configuration
 

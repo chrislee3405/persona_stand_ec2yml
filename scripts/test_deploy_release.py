@@ -6,7 +6,8 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from deploy_release import validate, validate_logging
+from unittest.mock import patch
+from deploy_release import validate, validate_logging, resolve_tag, deploy_tag
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 
@@ -21,6 +22,54 @@ def receipt():
     return {'schemaVersion': 1, 'status': 'promoted', 'images': images,
             'combinedTest': {'status': 'passed', 'selectedRelease': copy.deepcopy(images),
                             **{part + 'Image': value['image'] for part, value in images.items()}}}
+
+
+class TagDeployment(unittest.TestCase):
+    def metadata(self, part, tag='v1.1.1'):
+        return json.dumps({'imageDetails': [{
+            'registryId': '123456789012', 'repositoryName': 'persona_stand/' + part,
+            'imageTags': [tag], 'imageDigest': 'sha256:' + ('a' if part == 'frontend' else 'b') * 64,
+        }]})
+
+    def test_exact_tag_is_resolved_in_both_repositories_and_deployed_by_digest(self):
+        for tag in ('v1.1.1', '1.1.1'):
+            with patch('deploy_release.subprocess.check_output', side_effect=[
+                    self.metadata('frontend', tag), self.metadata('backend', tag)]) as lookup, \
+                    patch('deploy_release.deploy_selection') as deploy:
+                deploy_tag(tag, '123456789012', 'ap-southeast-2')
+                self.assertEqual(lookup.call_count, 2)
+                for call in lookup.call_args_list:
+                    self.assertIn('imageTag=' + tag, call.args[0])
+                values, images, evidence = deploy.call_args.args
+                self.assertEqual(values['BACKEND_DIGEST'], 'sha256:' + 'b' * 64)
+                self.assertTrue(images['frontend']['ecrImage'].endswith('@sha256:' + 'a' * 64))
+                self.assertFalse(evidence['selection']['testEvidenceValidated'])
+
+    def test_missing_backend_prevents_any_deployment(self):
+        with patch('deploy_release.subprocess.check_output', side_effect=[
+                self.metadata('frontend'), subprocess.CalledProcessError(254, ['aws'])]), \
+                patch('deploy_release.deploy_selection') as deploy:
+            with self.assertRaises(subprocess.CalledProcessError):
+                deploy_tag('v1.1.1', '123456789012', 'ap-southeast-2')
+            deploy.assert_not_called()
+
+    def test_wrong_registry_repository_tag_or_digest_is_rejected(self):
+        for key, value in [('registryId', '999999999999'), ('repositoryName', 'other/frontend'),
+                           ('imageTags', ['v1.1.0']), ('imageDigest', 'bad')]:
+            data = json.loads(self.metadata('frontend'))
+            data['imageDetails'][0][key] = value
+            with patch('deploy_release.subprocess.check_output', return_value=json.dumps(data)):
+                with self.assertRaises(ValueError):
+                    resolve_tag('v1.1.1', '123456789012', 'ap-southeast-2')
+
+    def test_invalid_release_selection_is_rejected_before_aws(self):
+        for tag, account, region in [('latest', '123456789012', 'ap-southeast-2'),
+                                     ('v1.1.1', 'bad', 'ap-southeast-2'),
+                                     ('v1.1.1', '123456789012', 'bad region')]:
+            with patch('deploy_release.subprocess.check_output') as lookup:
+                with self.assertRaises(ValueError):
+                    resolve_tag(tag, account, region)
+                lookup.assert_not_called()
 
 
 class DeploymentValidation(unittest.TestCase):

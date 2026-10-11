@@ -171,12 +171,31 @@ docker compose --env-file .env --env-file release-images.env -f docker-compose.e
 ```
 The app should be reachable at `http://<ec2-public-ip>` — **Where: your local machine's browser**. Once HTTPS is set up (Part A, *HTTPS with Let's Encrypt*), use `https://<your-domain>` instead.
 
+### Deploy directly by ECR release tag (no artifact transfer)
+
+For an existing initialized deployment, after **Approve major release and promote to ECR** succeeds, you can select the release directly in the EC2 terminal. Check the exact **Image tags** value in both ECR repositories: the current workflow creates `vX.Y.Z` tags. The script also accepts `X.Y.Z` if that is the actual tag; it does not silently add or remove `v`.
+
+Update the scripts on EC2 once this change is available on main, apply any outstanding database migrations as described in C.2, then run:
+
+```bash
+cd ~/app
+git pull --ff-only origin main
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 552823820482.dkr.ecr.ap-southeast-2.amazonaws.com
+python3 scripts/deploy_release.py --tag v1.1.1 --account 552823820482 --region ap-southeast-2
+```
+
+Replace the example tag with the approved release's exact tag. The EC2 IAM role needs `ecr:DescribeImages` on both `persona_stand/frontend` and `persona_stand/backend`, in addition to its existing ECR pull permissions. AWS CLI must be installed and use the intended instance role.
+
+Both tags are resolved before Docker changes anything. The script deploys the resulting immutable digests, checks logging settings and container health, verifies the running digests, and generates `release-images.env` and a deployment record. Missing tags or lookup failures stop deployment. No `promotion.json` upload is needed. This route trusts your selection of an approved ECR release tag; it does not independently validate GitHub test evidence. Keep the successful promotion artifact in GitHub for that evidence, and keep ECR release tags immutable. First-time database initialization still follows C.1.
+
+For rollback, use the same command with the previous approved release tag after confirming compatibility with the current database schema. Perform the live checks in C.2 after either deployment or rollback.
+
 ## C.2 Every Redeploy
 For a minor update, stop after the combined tests: nothing needs changing on EC2. For an approved major release:
 
 1. Run the same combined workflow for the intended GHCR pair on ec2yml main.
 2. Manually approve and run promotion on main; it automatically selects matching passing evidence (C.0.3).
-3. Follow **C.0.4 Download and transfer the approved release** above: click the successful promotion run → **Summary** → its artifact name, extract the ZIP, verify the release, then use the local SCP command to transfer `promotion.json` and `release-images.env` to `~/app`.
+3. Choose the direct ECR-tag route above to skip artifact transfer, or follow **C.0.4 Download and transfer the approved release** for the receipt route. With `deploy_release.py promotion.json`, only `promotion.json` needs transferring: the script generates `release-images.env` after deployment.
 4. Back up production data and stop the old backend before schema changes. Apply outstanding migrations from the selected backend release in chronological order: `20260917_site_media.sql`, `20260920_conversation_last_handled_index.sql`, `20261002_message_token_usage.sql`, `20261005_model_configuration.sql`, `20261006_model_configuration_use_priority.sql`, `20261007_model_configuration_providers.sql`, then `20261008_model_configuration_selection.sql`. Follow that release's `scripts/migrations/README.md`, using `psql -v ON_ERROR_STOP=1` and the intended PostgreSQL connection. Do not run the old backend after the cursor backfill. The provider migrations preserve existing settings and do not switch routing to the fresh seed defaults. Fresh production databases require the explicit initialization in C.1. Do not reset already-migrated cursors or replace owner settings during redeployment.
 5. Run the commands below. The script validates the receipt, pulls only ECR digests, starts both services, verifies their actual image references, and writes `deployment-records/TIMESTAMP.json` with the full source-to-deployment chain.
 6. Confirm `/api/health/ready` returns 200 (required database schema is readable), then test a new guest conversation and an invite conversation. A schema failure prevents backend startup; `/docs` is not a readiness check. Save that deployment record alongside the original promotion/test evidence off the EC2 instance. Open the live site, check consent and chat, and inspect logs. Running containers alone do not establish full application health.

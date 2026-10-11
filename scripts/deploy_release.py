@@ -1,15 +1,17 @@
-"""Deploy a downloaded promotion receipt; retain a receipt of running ECR digests.
+"""Deploy a promotion receipt or exact ECR release tag; record running digests.
 
 Run from the ec2yml repository on EC2: python3 scripts/deploy_release.py promotion.json
 The operator must download this file from a trusted successful promotion run.
+Alternatively use --tag vX.Y.Z --account ACCOUNT --region REGION after promotion.
 """
 import datetime
+import argparse
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-import sys
+import socket
 
 
 def validate(promotion):
@@ -58,9 +60,36 @@ def validate_logging(config):
         raise ValueError('Refusing to deploy: CHAT_TRACE is on for the backend, which logs every conversation.')
 
 
-def deploy(path):
-    promotion = json.loads(Path(path).read_text())
-    values = validate(promotion)
+def resolve_tag(tag, account, region):
+    """Resolve an operator-selected ECR release tag to a fixed image pair."""
+    if not re.fullmatch(r'v?\d+\.\d+\.\d+', tag):
+        raise ValueError('Release tag must be X.Y.Z or vX.Y.Z (use the exact ECR tag)')
+    if not re.fullmatch(r'\d{12}', account) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)+', region):
+        raise ValueError('A 12-digit AWS account and valid AWS region are required')
+    values = {'ECR_ACCOUNT_ID': account, 'AWS_REGION': region}
+    images = {}
+    for part in ('frontend', 'backend'):
+        repository = 'persona_stand/' + part
+        response = json.loads(subprocess.check_output([
+            'aws', 'ecr', 'describe-images', '--registry-id', account,
+            '--region', region, '--repository-name', repository,
+            '--image-ids', 'imageTag=' + tag, '--output', 'json', '--no-cli-pager',
+        ], text=True))
+        details = response.get('imageDetails', [])
+        if len(details) != 1:
+            raise ValueError(part + ': expected exactly one image for release tag ' + tag)
+        detail = details[0]
+        digest = detail.get('imageDigest', '')
+        if (detail.get('registryId') != account or detail.get('repositoryName') != repository
+                or tag not in detail.get('imageTags', [])
+                or not re.fullmatch(r'sha256:[a-f0-9]{64}', digest)):
+            raise ValueError(part + ': ECR returned invalid release image metadata')
+        values[part.upper() + '_DIGEST'] = digest
+        images[part] = {'ecrImage': f'{account}.dkr.ecr.{region}.amazonaws.com/{repository}@{digest}'}
+    return values, images
+
+
+def deploy_selection(values, images, evidence):
     env = {**os.environ, **values}
     compose = ['docker', 'compose', '--env-file', '.env', '-f', 'docker-compose.ec2.yml']
     # Checked against the configuration Compose will actually use, so a
@@ -74,7 +103,7 @@ def deploy(path):
     for part in ('frontend', 'backend'):
         container = subprocess.check_output(compose + ['ps', '-q', part], env=env, text=True).strip()
         details = json.loads(subprocess.check_output(['docker', 'inspect', container], text=True))[0]
-        selected = promotion['images'][part]['ecrImage']
+        selected = images[part]['ecrImage']
         image = json.loads(subprocess.check_output(['docker', 'image', 'inspect', details['Image']], text=True))[0]
         if details['Config']['Image'] != selected or selected not in image.get('RepoDigests', []):
             raise RuntimeError('Running container does not match the promoted digest')
@@ -82,14 +111,40 @@ def deploy(path):
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     output = Path('deployment-records') / (timestamp + '.json')
     output.parent.mkdir(exist_ok=True)
-    output.write_text(json.dumps({'deployedAt': timestamp, 'hostname': os.uname().nodename,
-        'promotion': promotion, 'running': running}, indent=2) + '\n')
+    output.write_text(json.dumps({'deployedAt': timestamp, 'hostname': socket.gethostname(),
+        **evidence, 'running': running}, indent=2) + '\n')
     Path('release-images.env').write_text(''.join(key + '=' + value + '\n' for key, value in values.items()))
     print('Deployment recorded in', output)
     print('Containers are running; perform the live application checks in Part C.')
 
 
+def deploy(path):
+    promotion = json.loads(Path(path).read_text())
+    deploy_selection(validate(promotion), promotion['images'], {'promotion': promotion})
+
+
+def deploy_tag(tag, account, region):
+    values, images = resolve_tag(tag, account, region)
+    for part, image in images.items():
+        print(part + ': ' + image['ecrImage'])
+    deploy_selection(values, images, {'selection': {
+        'method': 'ecr-tag', 'tag': tag, 'images': images,
+        'testEvidenceValidated': False,
+    }})
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        raise SystemExit('Usage: python3 scripts/deploy_release.py promotion.json')
-    deploy(sys.argv[1])
+    parser = argparse.ArgumentParser(description='Deploy a promotion receipt or an exact approved ECR release tag.')
+    parser.add_argument('receipt', nargs='?')
+    parser.add_argument('--tag', help='Exact release tag present in both ECR repositories')
+    parser.add_argument('--account', help='12-digit ECR account ID (required with --tag)')
+    parser.add_argument('--region', help='ECR AWS region (required with --tag)')
+    args = parser.parse_args()
+    if args.tag:
+        if args.receipt or not args.account or not args.region:
+            parser.error('--tag requires --account and --region, and cannot be combined with a receipt')
+        deploy_tag(args.tag, args.account, args.region)
+    else:
+        if not args.receipt or args.account or args.region:
+            parser.error('Supply a promotion receipt, or --tag with --account and --region')
+        deploy(args.receipt)
