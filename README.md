@@ -25,7 +25,7 @@ Promotion automatically finds passing evidence for the exact marker and current 
 Use a fresh candidate suffix for another application build. The app's displayed
 version remains `v1.1.0`; candidate markers identify builds, not database content.
 
-> **Important:** Replace every value surrounded by `<...>` with your own value. Do not commit passwords, private keys, AWS access keys, Google service-account private keys, or database credentials.
+> **Important:** Replace every `<...>` or `YOUR_...` placeholder before running commands or creating policies. Public documentation and committed templates use placeholders for account IDs, resource addresses and personal details; keep completed deployment configuration and content in private, ignored files. Do not commit passwords, private keys, AWS access keys, Google service-account private keys, or database credentials.
 
 ---
 

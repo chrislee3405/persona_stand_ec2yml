@@ -180,11 +180,11 @@ Update the scripts on EC2 once this change is available on main, apply any outst
 ```bash
 cd ~/app
 git pull --ff-only origin main
-aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 552823820482.dkr.ecr.ap-southeast-2.amazonaws.com
-python3 scripts/deploy_release.py --tag v1.1.1 --account 552823820482 --region ap-southeast-2
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.ap-southeast-2.amazonaws.com
+python3 scripts/deploy_release.py --tag <approved-release-tag> --account <AWS_ACCOUNT_ID> --region ap-southeast-2
 ```
 
-Replace the example tag with the approved release's exact tag. The EC2 IAM role needs `ecr:DescribeImages` on both `persona_stand/frontend` and `persona_stand/backend`, in addition to its existing ECR pull permissions. AWS CLI must be installed and use the intended instance role.
+Replace `<AWS_ACCOUNT_ID>` in both commands with the intended ECR registry's 12-digit AWS account ID, and `<approved-release-tag>` with the approved release's exact tag, including `v` if present. Use your ECR region consistently; `ap-southeast-2` is the example region. See [placeholder lookup](placeholder_lookup.md) for where to find these values. The EC2 IAM role needs `ecr:DescribeImages` on both `persona_stand/frontend` and `persona_stand/backend`, in addition to its existing ECR pull permissions. AWS CLI must be installed and use the intended instance role.
 
 Both tags are resolved before Docker changes anything. The script deploys the resulting immutable digests, checks logging settings and container health, verifies the running digests, and generates `release-images.env` and a deployment record. Missing tags or lookup failures stop deployment. No `promotion.json` upload is needed. This route trusts your selection of an approved ECR release tag; it does not independently validate GitHub test evidence. Keep the successful promotion artifact in GitHub for that evidence, and keep ECR release tags immutable. First-time database initialization still follows C.1.
 

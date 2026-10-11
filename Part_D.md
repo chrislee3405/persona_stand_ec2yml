@@ -61,7 +61,7 @@ Frontend renders the page
 6. Leave everything else default → **Create distribution**.
 7. After it is created, CloudFront shows a banner: **"The S3 bucket policy needs to be updated" → Copy policy**. Click **Copy policy**, then go to **S3 Console → `<bucket-name>` → Permissions → Bucket policy → Edit**, paste, **Save**.
 8. Wait for the distribution **Status** to change from *Deploying* to *Enabled* (~5–15 min).
-9. On the distribution's **General** tab, note the **Distribution domain name** (e.g. `d5ydhntfck9s8.cloudfront.net`) — this is `<cloudfront-domain>`.
+9. On the distribution's **General** tab, note the **Distribution domain name** — use that value for `<cloudfront-domain>`.
 
 ### Test
 
@@ -159,7 +159,7 @@ Paste into the `psql` prompt. Fill every `<...>`. `$j$ ... $j$` is dollar-quotin
 INSERT INTO site_content (section, content) VALUES (
   'personal_statement',
   $j${
-    "owner": "<your name, e.g. Hang Chi Lee>",
+    "owner": "<your name>",
     "title": "<your role, e.g. Full-stack Engineer>",
     "body": "<1-3 sentence bio paragraph>",
     "cta": { "label": "<button text>", "href": "/chatroom" },
@@ -186,9 +186,9 @@ INSERT INTO site_content (section, content) VALUES (
   'qualifications',
   $j$[
     {
-      "id": "<slug, e.g. mit-qut>",
+      "id": "<qualification slug>",
       "title": "<qualification or award, e.g. Master of Information Technology>",
-      "institution": "<e.g. Queensland University of Technology>",
+      "institution": "<institution name>",
       "year": "<e.g. 2024>",
       "detail": "<optional extra line — or omit>"
     }
@@ -251,7 +251,7 @@ INSERT INTO site_content (section, content) VALUES (
   $j${
     "email": "<your email>",
     "intro": "<optional short line — or omit>",
-    "location": "<e.g. Brisbane, Australia — or omit>",
+    "location": "<city and country — or omit>",
     "links": [
       { "label": "LinkedIn", "href": "https://www.linkedin.com/in/<handle>" },
       { "label": "GitHub",   "href": "https://github.com/<handle>" }
@@ -266,7 +266,7 @@ INSERT INTO site_content (section, content) VALUES (
 INSERT INTO site_content (section, content) VALUES (
   'chatroom',
   $j${
-    "name": "<name shown in the chat header, e.g. Hang Chi Lee>"
+    "name": "<name shown in the chat header>"
   }$j$::jsonb
 );
 
@@ -277,7 +277,7 @@ INSERT INTO site_content (section, content) VALUES (
 INSERT INTO site_content (section, content) VALUES (
   'navbar',
   $j${
-    "name": "<name in the header, e.g. Hang Chi Lee>"
+    "name": "<name in the header>"
   }$j$::jsonb
 );
 
@@ -308,7 +308,7 @@ INSERT INTO site_journey (journey_id, content) VALUES (
   '<block id, e.g. 2024-master-ai>',
   $j${
     "heading": "<optional — defaults to the block title>",
-    "subtitle": "<optional italic line, e.g. Brisbane, Australia>",
+    "subtitle": "<optional italic line>",
     "body": "<the full story.\n\nBlank lines split paragraphs.\n\nWhat stood out:\n- lines starting with a dash become bullets\n- mix paragraphs and bullets freely>",
     "highlights": [
       "<optional bullet>",
